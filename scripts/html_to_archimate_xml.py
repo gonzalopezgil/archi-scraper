@@ -434,19 +434,9 @@ def create_archimate_xml(elements, coordinates, relationships, view_name):
             "h": str(coords['h'])
         })
     
-    # Add connections
-    for rel in relationships:
-        source_node = node_ids.get(rel['source'])
-        target_node = node_ids.get(rel['target'])
-        
-        if source_node and target_node:
-            ET.SubElement(view, "connection", {
-                "identifier": gen_id("conn"),
-                "relationshipRef": rel['id'],
-                "xsi:type": "Relationship",
-                "source": source_node,
-                "target": target_node
-            })
+    # NOTE: Connections are SKIPPED to create a clean diagram without spiderweb lines
+    # The relationships still exist in the <relationships> section of the model
+    # They will appear in Archi's Model Tree, just not drawn on this view canvas
     
     return root
 
