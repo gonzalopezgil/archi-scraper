@@ -459,10 +459,10 @@ def save_xml(root, output_path):
     print(f"  Created: {output_path}")
 
 # ============================================================================
-# Process Single HTML File
+# Process Single HTML File - Returns data for merging
 # ============================================================================
-def process_html_file(html_path):
-    """Process a single Archi HTML view file."""
+def extract_view_data(html_path):
+    """Extract elements, relationships, coordinates and view info from HTML."""
     print(f"\nProcessing: {html_path}")
     
     with open(html_path, 'r', encoding='utf-8') as f:
@@ -472,9 +472,6 @@ def process_html_file(html_path):
     title = soup.find('title')
     view_name = title.get_text(strip=True) if title else html_path.stem
     print(f"  View: {view_name}")
-    
-    # Load model.html for documentation
-    load_model_data("model.html")
     
     # Step A: Extract elements
     elements = extract_elements(soup)
@@ -489,20 +486,121 @@ def process_html_file(html_path):
     print(f"  Relationships: {len(relationships)}")
     
     if not coordinates:
-        print("  ERROR: No coordinates found. Skipping.")
+        print("  WARNING: No coordinates found.")
         return None
     
-    # Create XML
-    root = create_archimate_xml(elements, coordinates, relationships, view_name)
-    
-    # Save
-    output_path = html_path.with_suffix('.xml')
-    save_xml(root, output_path)
-    
-    return output_path
+    return {
+        'view_name': view_name,
+        'elements': elements,
+        'relationships': relationships,
+        'coordinates': coordinates
+    }
 
 # ============================================================================
-# Main
+# Create Merged ArchiMate XML
+# ============================================================================
+def create_merged_xml(all_elements, all_relationships, views_data):
+    """Create a single ArchiMate XML with all elements, relationships, and views."""
+    
+    model_id = gen_id("model")
+    
+    # Root
+    root = ET.Element("model", {
+        "xmlns": ARCHIMATE_NS,
+        "xmlns:xsi": XSI_NS,
+        "xsi:schemaLocation": SCHEMA_LOCATION,
+        "identifier": model_id
+    })
+    
+    ET.SubElement(root, "name", {"xml:lang": "en"}).text = "Data Centric Reference Architecture"
+    
+    # --- Elements section (all unique elements) ---
+    elements_section = ET.SubElement(root, "elements")
+    for elem_id, elem in all_elements.items():
+        elem_type = elem['type']
+        # Skip non-ArchiMate types
+        if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+            continue
+        
+        element = ET.SubElement(elements_section, "element", {
+            "identifier": elem_id,
+            "xsi:type": elem_type
+        })
+        ET.SubElement(element, "name", {"xml:lang": "en"}).text = elem['name']
+        
+        # Add documentation from model.html
+        doc = get_element_documentation(elem_id)
+        if doc:
+            ET.SubElement(element, "documentation", {"xml:lang": "en"}).text = doc
+    
+    # --- Relationships section (all unique relationships) ---
+    if all_relationships:
+        rels_section = ET.SubElement(root, "relationships")
+        for rel_id, rel in all_relationships.items():
+            rel_elem = ET.SubElement(rels_section, "relationship", {
+                "identifier": rel_id,
+                "xsi:type": rel['type'],
+                "source": rel['source'],
+                "target": rel['target']
+            })
+            if rel.get('name'):
+                ET.SubElement(rel_elem, "name", {"xml:lang": "en"}).text = rel['name']
+    
+    # --- Views section (multiple views) ---
+    views_section = ET.SubElement(root, "views")
+    diagrams = ET.SubElement(views_section, "diagrams")
+    
+    for view_data in views_data:
+        view_id = gen_id("view")
+        view = ET.SubElement(diagrams, "view", {"identifier": view_id, "xsi:type": "Diagram"})
+        ET.SubElement(view, "name", {"xml:lang": "en"}).text = view_data['view_name']
+        
+        elements = view_data['elements']
+        coordinates = view_data['coordinates']
+        
+        # Collect nodes with coordinates for z-order sorting
+        nodes_to_add = []
+        for elem_id, elem in elements.items():
+            if elem_id not in coordinates:
+                continue
+            
+            elem_type = elem['type']
+            if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+                continue
+            
+            coords = coordinates[elem_id]
+            area = coords['w'] * coords['h']
+            
+            nodes_to_add.append({
+                'elem_id': elem_id,
+                'coords': coords,
+                'area': area
+            })
+        
+        # Sort by area DESCENDING (largest first for z-order)
+        nodes_to_add.sort(key=lambda n: n['area'], reverse=True)
+        
+        # Add flat nodes with absolute coordinates
+        for node_data in nodes_to_add:
+            elem_id = node_data['elem_id']
+            coords = node_data['coords']
+            
+            ET.SubElement(view, "node", {
+                "identifier": gen_id("node"),
+                "elementRef": elem_id,
+                "xsi:type": "Element",
+                "x": str(coords['x']),
+                "y": str(coords['y']),
+                "w": str(coords['w']),
+                "h": str(coords['h'])
+            })
+        
+        print(f"  Added view '{view_data['view_name']}' with {len(nodes_to_add)} nodes")
+    
+    return root
+
+# ============================================================================
+# Main - Merge all views into single master_model.xml
 # ============================================================================
 def main():
     # Files to process
@@ -513,18 +611,66 @@ def main():
     ]
     
     print("=" * 60)
-    print("Archi HTML View to ArchiMate XML Converter")
+    print("Archi HTML Views to Single Master Model Converter")
     print("=" * 60)
     
+    # Load model.html documentation ONCE at start
+    load_model_data("model.html")
+    
+    # Global accumulators (keyed by ID for deduplication)
+    all_elements = {}      # {elem_id: elem_data}
+    all_relationships = {} # {rel_id: rel_data}
+    views_data = []        # List of view data dicts
+    
+    # Process each HTML file
     for html_path in html_files:
-        if html_path.exists():
-            process_html_file(html_path)
-        else:
+        if not html_path.exists():
             print(f"\nSkipping (not found): {html_path}")
+            continue
+        
+        data = extract_view_data(html_path)
+        if not data:
+            continue
+        
+        # Accumulate elements (deduplicate by ID)
+        for elem_id, elem in data['elements'].items():
+            if elem_id not in all_elements:
+                all_elements[elem_id] = elem
+        
+        # Accumulate relationships (deduplicate by ID)
+        for rel in data['relationships']:
+            rel_id = rel['id']
+            if rel_id not in all_relationships:
+                all_relationships[rel_id] = rel
+        
+        # Add view data
+        views_data.append(data)
+    
+    print(f"\n--- Summary ---")
+    print(f"Total unique elements: {len(all_elements)}")
+    print(f"Total unique relationships: {len(all_relationships)}")
+    print(f"Total views: {len(views_data)}")
+    
+    if not views_data:
+        print("\nERROR: No valid views found. Exiting.")
+        return
+    
+    # Create merged XML
+    print("\nGenerating master_model.xml...")
+    root = create_merged_xml(all_elements, all_relationships, views_data)
+    
+    # Save
+    output_path = Path("master_model.xml")
+    save_xml(root, output_path)
     
     print("\n" + "=" * 60)
-    print("Conversion Complete")
+    print("SUCCESS: Created master_model.xml")
     print("=" * 60)
+    print(f"  Elements: {len(all_elements)}")
+    print(f"  Relationships: {len(all_relationships)}")
+    print(f"  Views: {len(views_data)}")
+    print(f"\nImport into Archi: File → Import → Model from Open Exchange File")
 
 if __name__ == "__main__":
     main()
+
