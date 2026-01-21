@@ -58,16 +58,16 @@ def fix_relationship_type(rel_type):
     return rel_type
 
 # ============================================================================
-# Load Documentation from model.html
+# Load Documentation and Folder Structure from model.html
 # ============================================================================
 def load_model_data(model_html_path):
-    """Load element documentation from model.html."""
+    """Load element documentation and folder structure from model.html."""
     global MODEL_DATA
     
     if MODEL_DATA is not None:
         return MODEL_DATA
     
-    MODEL_DATA = {'elements': {}, 'relationships': {}}
+    MODEL_DATA = {'elements': {}, 'relationships': {}, 'folders': {}, 'folder_contents': []}
     
     if not Path(model_html_path).exists():
         print(f"  Warning: {model_html_path} not found. Skipping documentation.")
@@ -83,25 +83,20 @@ def load_model_data(model_html_path):
     matches = re.findall(pattern, content)
     
     for match in matches:
-        # Parse each field
         elem_data = {}
         
-        # Extract id
         id_match = re.search(r'id:\s*"([^"]+)"', match)
         if id_match:
             elem_data['id'] = id_match.group(1)
         
-        # Extract name
         name_match = re.search(r'name:\s*(?:decodeURL\()?"([^"]+)"', match)
         if name_match:
             elem_data['name'] = decode_url(name_match.group(1))
         
-        # Extract type
         type_match = re.search(r'type:\s*"([^"]+)"', match)
         if type_match:
             elem_data['type'] = type_match.group(1)
         
-        # Extract documentation
         doc_match = re.search(r'documentation:\s*(?:decodeURL\()?"([^"]+)"', match)
         if doc_match:
             elem_data['documentation'] = decode_url(doc_match.group(1))
@@ -110,6 +105,48 @@ def load_model_data(model_html_path):
             MODEL_DATA['elements'][elem_data['id']] = elem_data
     
     print(f"    Loaded {len(MODEL_DATA['elements'])} elements from model.html")
+    
+    # Extract dataFolders
+    folder_pattern = r'dataFolders\.push\(\s*\{([^}]+)\}\s*\);'
+    folder_matches = re.findall(folder_pattern, content)
+    
+    for match in folder_matches:
+        folder_data = {}
+        
+        id_match = re.search(r'id:\s*"([^"]+)"', match)
+        if id_match:
+            folder_data['id'] = id_match.group(1)
+        
+        type_match = re.search(r'type:\s*"([^"]+)"', match)
+        if type_match:
+            folder_data['type'] = type_match.group(1)
+        
+        name_match = re.search(r'name:\s*(?:decodeURL\()?"([^"]+)"', match)
+        if name_match:
+            folder_data['name'] = decode_url(name_match.group(1))
+        
+        if 'id' in folder_data:
+            MODEL_DATA['folders'][folder_data['id']] = folder_data
+    
+    print(f"    Loaded {len(MODEL_DATA['folders'])} folders from model.html")
+    
+    # Extract dataFoldersContent (parent-child relationships)
+    content_pattern = r'dataFoldersContent\.push\(\s*\{([^}]+)\}\s*\);'
+    content_matches = re.findall(content_pattern, content)
+    
+    for match in content_matches:
+        folder_id_match = re.search(r'folderid:\s*"([^"]+)"', match)
+        content_id_match = re.search(r'contentid:\s*"([^"]+)"', match)
+        content_type_match = re.search(r'contenttype:\s*"([^"]+)"', match)
+        
+        if folder_id_match and content_id_match:
+            MODEL_DATA['folder_contents'].append({
+                'folder_id': folder_id_match.group(1),
+                'content_id': content_id_match.group(1),
+                'content_type': content_type_match.group(1) if content_type_match else 'Unknown'
+            })
+    
+    print(f"    Loaded {len(MODEL_DATA['folder_contents'])} folder-content mappings")
     
     return MODEL_DATA
 
@@ -473,6 +510,18 @@ def extract_view_data(html_path):
     view_name = title.get_text(strip=True) if title else html_path.stem
     print(f"  View: {view_name}")
     
+    # Get view ID from map name
+    view_id = None
+    map_elem = soup.find('map')
+    if map_elem and map_elem.get('name'):
+        map_name = map_elem.get('name')
+        if map_name.endswith('map'):
+            view_id = map_name[:-3] # Remove 'map' suffix
+    
+    if not view_id:
+        view_id = gen_id("view")
+    print(f"  View ID: {view_id}")
+    
     # Step A: Extract elements
     elements = extract_elements(soup)
     print(f"  Elements: {len(elements)}")
@@ -491,6 +540,7 @@ def extract_view_data(html_path):
     
     return {
         'view_name': view_name,
+        'view_id': view_id,
         'elements': elements,
         'relationships': relationships,
         'coordinates': coordinates
@@ -546,12 +596,120 @@ def create_merged_xml(all_elements, all_relationships, views_data):
             if rel.get('name'):
                 ET.SubElement(rel_elem, "name", {"xml:lang": "en"}).text = rel['name']
     
+    # --- Organizations section (folder structure) ---
+    # Must come BEFORE Views per ArchiMate schema
+    if MODEL_DATA and MODEL_DATA.get('folders') and MODEL_DATA.get('folder_contents'):
+        print("\n  Building folder structure with referential integrity...")
+        
+        # Build set of valid IDs (Elements + Relationships + PROCESSED Views)
+        valid_ids = set()
+        
+        # Add only Elements that will actually be written (skip excluded types)
+        for elem_id, elem in all_elements.items():
+            elem_type = elem['type']
+            if elem_type not in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+                valid_ids.add(elem_id)
+                
+        valid_ids.update(all_relationships.keys())
+        for v_data in views_data:
+            if v_data.get('view_id'):
+                valid_ids.add(v_data['view_id'])
+        
+        print(f"    Valid IDs for folder structure: {len(valid_ids)}")
+        
+        # Build parent->children mapping
+        folder_children = {}  # folder_id -> list of (content_id, content_type)
+        for fc in MODEL_DATA['folder_contents']:
+            parent_id = fc['folder_id']
+            if parent_id not in folder_children:
+                folder_children[parent_id] = []
+            folder_children[parent_id].append((fc['content_id'], fc['content_type']))
+        
+        # Recursive function to determine if a folder has valid content
+        def folder_has_valid_content(folder_id, visited=None):
+            if visited is None:
+                visited = set()
+            if folder_id in visited:
+                return False
+            visited.add(folder_id)
+            
+            children = folder_children.get(folder_id, [])
+            for content_id, content_type in children:
+                # If content is a valid ID (element/relation/view)
+                if content_id in valid_ids:
+                    return True
+                
+                # If content is a sub-folder, check if it has valid content
+                if content_type == 'Folder' or content_id in MODEL_DATA['folders']:
+                    if folder_has_valid_content(content_id, visited):
+                        return True
+            return False
+        
+        # Identify all folders that should be included
+        included_folders = set()
+        for folder_id in MODEL_DATA['folders']:
+            if folder_has_valid_content(folder_id):
+                included_folders.add(folder_id)
+        
+        # Ensure ancestors are included for all included folders
+        def get_parent_folder(folder_id):
+            for fc in MODEL_DATA['folder_contents']:
+                if fc['content_id'] == folder_id and fc['content_type'] == 'Folder':
+                    return fc['folder_id']
+            return None
+            
+        folders_to_check = list(included_folders)
+        while folders_to_check:
+            folder_id = folders_to_check.pop()
+            parent_id = get_parent_folder(folder_id)
+            if parent_id and parent_id not in included_folders:
+                included_folders.add(parent_id)
+                folders_to_check.append(parent_id)
+        
+        print(f"    Including {len(included_folders)} folders (filtered from {len(MODEL_DATA['folders'])})")
+        
+        # Find root folders
+        root_folder_ids = []
+        for folder_id in included_folders:
+            folder = MODEL_DATA['folders'].get(folder_id)
+            if folder and folder.get('type') == 'Folder':
+                parent = get_parent_folder(folder_id)
+                if parent is None or MODEL_DATA['folders'].get(parent, {}).get('type') == 'ArchimateModel':
+                    root_folder_ids.append(folder_id)
+        
+        # Generate XML
+        orgs_section = ET.SubElement(root, "organizations")
+        
+        def add_folder_items(parent_xml, folder_id):
+            folder = MODEL_DATA['folders'].get(folder_id)
+            if not folder or folder_id not in included_folders:
+                return
+            
+            folder_item = ET.SubElement(parent_xml, "item")
+            ET.SubElement(folder_item, "label", {"xml:lang": "en"}).text = folder.get('name', 'Unnamed')
+            
+            children = folder_children.get(folder_id, [])
+            for content_id, content_type in children:
+                # Add sub-folder if included
+                if content_type == 'Folder' and content_id in included_folders:
+                    add_folder_items(folder_item, content_id)
+                # Add content only if it maps to a VALID ID
+                elif content_id in valid_ids:
+                    ET.SubElement(folder_item, "item", {"identifierRef": content_id})
+        
+        for folder_id in root_folder_ids:
+            add_folder_items(orgs_section, folder_id)
+            
+        print(f"    Added organizations structure with {len(root_folder_ids)} root folders")
+    
     # --- Views section (multiple views) ---
+    # Must come LAST (after organizations)
     views_section = ET.SubElement(root, "views")
     diagrams = ET.SubElement(views_section, "diagrams")
     
     for view_data in views_data:
-        view_id = gen_id("view")
+        # Use extracted view_id if available to match folder references
+        view_id = view_data.get('view_id') or gen_id("view")
         view = ET.SubElement(diagrams, "view", {"identifier": view_id, "xsi:type": "Diagram"})
         ET.SubElement(view, "name", {"xml:lang": "en"}).text = view_data['view_name']
         
@@ -595,7 +753,7 @@ def create_merged_xml(all_elements, all_relationships, views_data):
                 "h": str(coords['h'])
             })
         
-        print(f"  Added view '{view_data['view_name']}' with {len(nodes_to_add)} nodes")
+        print(f"  Added view '{view_data['view_name']}' (ID: {view_id}) with {len(nodes_to_add)} nodes")
     
     return root
 
