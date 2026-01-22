@@ -1,4 +1,4 @@
-# Archi Scraper
+# ArchiMate Scraper
 
 **Reverse-engineer Archi HTML reports back into editable ArchiMate models**
 
