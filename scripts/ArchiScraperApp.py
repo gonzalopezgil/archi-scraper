@@ -23,13 +23,14 @@ from xml.dom import minidom
 import requests
 from bs4 import BeautifulSoup
 
-from PyQt6.QtCore import QUrl, pyqtSlot, Qt
+from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt, QObject
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
     QListWidget, QLabel, QSplitter, QGroupBox, QListWidgetItem
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 
 
 # ============================================================================
@@ -738,6 +739,40 @@ class ArchiMateXMLGenerator:
 
 
 # ============================================================================
+# Network Request Interceptor for Model URL Discovery
+# ============================================================================
+class ModelUrlSniffer(QWebEngineUrlRequestInterceptor):
+    """Intercepts browser network requests to capture model.html URL.
+    
+    When the Archi HTML report loads, it naturally requests model.html
+    for its search index. This interceptor captures that exact URL,
+    eliminating the need to guess paths with randomized folder IDs.
+    """
+    
+    # Custom signal emitted when model.html URL is found
+    model_url_found = pyqtSignal(str)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._already_captured = False
+    
+    def interceptRequest(self, info):
+        """Called for every network request made by the browser."""
+        url = info.requestUrl().toString()
+        
+        # Check if this is a request for model.html
+        if url.endswith('/model.html') and not self._already_captured:
+            self._already_captured = True
+            print(f"🔍 Found Model URL via Network: {url}")
+            self.model_url_found.emit(url)
+    
+    def reset(self):
+        """Reset the capture flag when navigating to a new report."""
+        self._already_captured = False
+        print("Model URL Sniffer reset for new report.")
+
+
+# ============================================================================
 # Main GUI Application
 # ============================================================================
 class ArchiScraperApp(QMainWindow):
@@ -751,6 +786,10 @@ class ArchiScraperApp(QMainWindow):
         # Model data cache
         self.model_data = ModelDataParser()
         self.base_url = None
+        
+        # Network interceptor to capture model.html URL automatically
+        self.model_sniffer = ModelUrlSniffer(self)
+        self.model_sniffer.model_url_found.connect(self._on_model_url_found)
         
         # Batch mode: list of collected view data
         self.batch_views = []  # List of view_data dicts
@@ -791,9 +830,13 @@ class ArchiScraperApp(QMainWindow):
         
         browser_layout.addLayout(top_bar)
         
-        # Web view
+        # Web view with network interceptor
         self.web_view = QWebEngineView()
         self.web_view.setUrl(QUrl("about:blank"))
+        
+        # Attach the model URL sniffer to capture model.html requests
+        self.web_view.page().profile().setUrlRequestInterceptor(self.model_sniffer)
+        
         browser_layout.addWidget(self.web_view, 1)
         
         # Bottom bar: Download buttons
@@ -949,14 +992,20 @@ class ArchiScraperApp(QMainWindow):
         print(f"URL: {url}")
         print(f"Base URL: {self.base_url}")
         
-        self.status_bar.showMessage(f"Loading: {url}")
+        # Reset the model data and sniffer for the new report
+        self.model_data = ModelDataParser()
+        self.model_sniffer.reset()
         
-        # Load the page
+        self.status_bar.showMessage(f"Loading: {url} (listening for model.html...)")
+        
+        # Load the page - the interceptor will automatically capture model.html when requested
         self.web_view.setUrl(QUrl(url))
-        
-        # Auto-fetch model.html in background
-        model_url = urljoin(self.base_url, "model.html")
-        self.status_bar.showMessage(f"Fetching model data from {model_url}...")
+    
+    @pyqtSlot(str)
+    def _on_model_url_found(self, model_url):
+        """Callback when the network sniffer detects a model.html request."""
+        print(f"🎯 Network Sniffer captured model.html: {model_url}")
+        self.status_bar.showMessage(f"Fetching model data from: {model_url}...")
         
         if self.model_data.load_from_url(model_url):
             elem_count = len(self.model_data.elements)
@@ -966,7 +1015,7 @@ class ArchiScraperApp(QMainWindow):
                 f"✓ Model Data Loaded: {elem_count} elements ({doc_count} with docs), {folder_count} folders"
             )
         else:
-            self.status_bar.showMessage("⚠ Warning: Could not load model.html. Documentation will be limited.")
+            self.status_bar.showMessage("⚠ Warning: Failed to load model.html. Documentation may be limited.")
     
     def _on_download_clicked(self):
         """Handle Download button click - single view mode."""
@@ -974,14 +1023,7 @@ class ArchiScraperApp(QMainWindow):
             QMessageBox.warning(self, "Error", "Please load a report first by entering a URL and clicking Go.")
             return
         
-        if not self.model_data.loaded:
-            reply = QMessageBox.question(
-                self, "Warning",
-                "Model data is not loaded. Documentation will be missing.\nContinue anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.No:
-                return
+        # Model loading is handled automatically by the network interceptor
         
         self.status_bar.showMessage("Extracting view from iframe...")
         
@@ -1012,6 +1054,18 @@ class ArchiScraperApp(QMainWindow):
             return
         
         print(f"Iframe src: {iframe_src}")
+        
+        # Check if model data was captured by the network sniffer
+        if not self.model_data.loaded:
+            reply = QMessageBox.question(
+                self, "Warning",
+                "Model data was not loaded (network sniffer didn't detect model.html).\n"
+                "Documentation and folder structure will be missing.\n\nContinue anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
+        
         self.status_bar.showMessage(f"Downloading view: {iframe_src}")
         
         try:
@@ -1107,6 +1161,10 @@ class ArchiScraperApp(QMainWindow):
             return
         
         print(f"Adding to batch - Iframe src: {iframe_src}")
+        
+        # Model loading is handled automatically by the network interceptor
+        # If model isn't loaded, user will get warning on export
+        
         self.status_bar.showMessage(f"Downloading view for batch: {iframe_src}")
         
         try:
