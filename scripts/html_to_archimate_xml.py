@@ -14,6 +14,7 @@ Outputs valid ArchiMate Open Exchange Format XML with proper nesting.
 import re
 import uuid
 import urllib.parse
+import argparse
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
@@ -761,19 +762,51 @@ def create_merged_xml(all_elements, all_relationships, views_data):
 # Main - Merge all views into single master_model.xml
 # ============================================================================
 def main():
-    # Files to process
-    html_files = [
-        Path("capabilities.html"),
-        Path("data-architecting.html"),
-        Path("data-quality.html"),
-    ]
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Archi HTML View to ArchiMate Model Exchange Format XML Converter",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Example usage:
+  python html_to_archimate_xml.py --model model.html --views view1.html view2.html --output my_architecture.xml
+        """
+    )
+    parser.add_argument(
+        "--model", "-m",
+        required=True,
+        type=str,
+        help="Path to the main model.html file (Required)"
+    )
+    parser.add_argument(
+        "--views", "-v",
+        required=True,
+        nargs="+",
+        type=str,
+        help="Paths to the specific view HTML files to process (Required, supports multiple files)"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        default="master_model.xml",
+        type=str,
+        help="Output XML filename (Optional, default: master_model.xml)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Convert paths
+    model_path = Path(args.model)
+    view_files = [Path(v) for v in args.views]
+    output_path = Path(args.output)
     
     print("=" * 60)
     print("Archi HTML Views to Single Master Model Converter")
     print("=" * 60)
+    print(f"  Model: {model_path}")
+    print(f"  Views: {[str(v) for v in view_files]}")
+    print(f"  Output: {output_path}")
     
     # Load model.html documentation ONCE at start
-    load_model_data("model.html")
+    load_model_data(str(model_path))
     
     # Global accumulators (keyed by ID for deduplication)
     all_elements = {}      # {elem_id: elem_data}
@@ -781,7 +814,7 @@ def main():
     views_data = []        # List of view data dicts
     
     # Process each HTML file
-    for html_path in html_files:
+    for html_path in view_files:
         if not html_path.exists():
             print(f"\nSkipping (not found): {html_path}")
             continue
@@ -814,15 +847,14 @@ def main():
         return
     
     # Create merged XML
-    print("\nGenerating master_model.xml...")
+    print(f"\nGenerating {output_path}...")
     root = create_merged_xml(all_elements, all_relationships, views_data)
     
     # Save
-    output_path = Path("master_model.xml")
     save_xml(root, output_path)
     
     print("\n" + "=" * 60)
-    print("SUCCESS: Created master_model.xml")
+    print(f"SUCCESS: Created {output_path}")
     print("=" * 60)
     print(f"  Elements: {len(all_elements)}")
     print(f"  Relationships: {len(all_relationships)}")
