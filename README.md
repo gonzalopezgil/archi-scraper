@@ -1,4 +1,4 @@
-# ArchiScraper
+# Archi Scraper
 
 ### An ArchiMate Web Report to XML Converter
 
