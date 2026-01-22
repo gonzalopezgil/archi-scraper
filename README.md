@@ -154,7 +154,7 @@ ArchiScraper generates standard **ArchiMate Open Exchange Format** XML files com
 
 ## 📝 License
 
-This project is provided as-is for architectural recovery and research purposes.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
