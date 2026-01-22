@@ -86,6 +86,51 @@ def fix_relationship_type(rel_type):
     return rel_type
 
 
+# Types that should be skipped entirely (visual-only, not ArchiMate elements)
+SKIP_ELEMENT_TYPES = {
+    'DiagramModelNote',       # Notes/annotations (visual only)
+    'DiagramModelReference',  # References to other diagrams (visual only)
+    'SketchModelSticky',      # Sketch sticky notes (visual only)
+    'Unknown',                # Unknown types
+}
+
+# Type mappings for ArchiMate schema compliance
+# Maps HTML type names to valid ArchiMate XSD types
+ELEMENT_TYPE_MAPPINGS = {
+    'DiagramModelGroup': 'Grouping',     # Visual group -> ArchiMate Grouping element
+    'Junction': 'AndJunction',           # Generic Junction -> AndJunction (safest default)
+    'OrJunction': 'OrJunction',          # Explicit OrJunction stays as is
+    'AndJunction': 'AndJunction',        # Explicit AndJunction stays as is
+    'SketchModelActor': 'BusinessActor', # Sketch actor -> real ArchiMate actor
+}
+
+
+def clean_element_type(type_str):
+    """Clean and validate element type for ArchiMate XML export.
+    
+    Args:
+        type_str: Raw type string from HTML (e.g., "Junction", "DiagramModelGroup")
+    
+    Returns:
+        Cleaned type string for xsi:type, or None if element should be skipped.
+    """
+    if not type_str:
+        return None
+    
+    # Strip whitespace
+    clean_type = type_str.strip()
+    
+    # Check if this type should be skipped entirely
+    if clean_type in SKIP_ELEMENT_TYPES:
+        return None
+    
+    # Apply type mappings (includes DiagramModelGroup -> Grouping)
+    if clean_type in ELEMENT_TYPE_MAPPINGS:
+        return ELEMENT_TYPE_MAPPINGS[clean_type]
+    
+    return clean_type
+
+
 def extract_id_from_href(href):
     """Extract element/view ID from href path."""
     if not href:
@@ -459,9 +504,13 @@ class ArchiMateXMLGenerator:
         all_elements = {}
         for elem_id, elem in elements.items():
             if elem_id in coordinates:
-                elem_type = elem['type']
-                if elem_type not in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
-                    all_elements[elem_id] = elem
+                # Use clean_element_type for proper type mapping and validation
+                cleaned_type = clean_element_type(elem['type'])
+                if cleaned_type is not None:
+                    # Store with cleaned type for XML generation
+                    elem_copy = elem.copy()
+                    elem_copy['type'] = cleaned_type
+                    all_elements[elem_id] = elem_copy
         
         # Collect relationships (keyed by ID)
         all_relationships = {}
@@ -512,7 +561,8 @@ class ArchiMateXMLGenerator:
                 continue
             
             elem_type = elem['type']
-            if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+            # Skip types that should not appear in views (use clean_element_type for filtering)
+            if clean_element_type(elem_type) is None:
                 continue
             
             coords = coordinates[elem_id]
@@ -532,6 +582,7 @@ class ArchiMateXMLGenerator:
             elem_id = node_data['elem_id']
             coords = node_data['coords']
             
+            # All elements (including Grouping) use elementRef
             ET.SubElement(view, "node", {
                 "identifier": gen_id("node"),
                 "elementRef": elem_id,
@@ -574,10 +625,14 @@ class ArchiMateXMLGenerator:
             # Collect elements that are in this view
             for elem_id, elem in elements.items():
                 if elem_id in coordinates:
-                    elem_type = elem['type']
-                    if elem_type not in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+                    # Use clean_element_type for proper type mapping and validation
+                    cleaned_type = clean_element_type(elem['type'])
+                    if cleaned_type is not None:
                         if elem_id not in all_elements:
-                            all_elements[elem_id] = elem
+                            # Store with cleaned type for XML generation
+                            elem_copy = elem.copy()
+                            elem_copy['type'] = cleaned_type
+                            all_elements[elem_id] = elem_copy
             
             # Collect relationships
             for rel in relationships:
@@ -637,7 +692,8 @@ class ArchiMateXMLGenerator:
                     continue
                 
                 elem_type = elem['type']
-                if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+                # Skip types that should not appear in views (use clean_element_type for filtering)
+                if clean_element_type(elem_type) is None:
                     continue
                 
                 coords = coordinates[elem_id]
@@ -657,6 +713,7 @@ class ArchiMateXMLGenerator:
                 elem_id = node_data['elem_id']
                 coords = node_data['coords']
                 
+                # All elements (including Grouping) use elementRef
                 ET.SubElement(view, "node", {
                     "identifier": gen_id("node"),
                     "elementRef": elem_id,

@@ -58,6 +58,51 @@ def fix_relationship_type(rel_type):
         return rel_type[:-12]  # Remove 'Relationship' suffix
     return rel_type
 
+
+# Types that should be skipped entirely (visual-only, not ArchiMate elements)
+SKIP_ELEMENT_TYPES = {
+    'DiagramModelNote',       # Notes/annotations (visual only)
+    'DiagramModelReference',  # References to other diagrams (visual only)
+    'SketchModelSticky',      # Sketch sticky notes (visual only)
+    'Unknown',                # Unknown types
+}
+
+# Type mappings for ArchiMate schema compliance
+# Maps HTML type names to valid ArchiMate XSD types
+ELEMENT_TYPE_MAPPINGS = {
+    'DiagramModelGroup': 'Grouping',     # Visual group -> ArchiMate Grouping element
+    'Junction': 'AndJunction',           # Generic Junction -> AndJunction (safest default)
+    'OrJunction': 'OrJunction',          # Explicit OrJunction stays as is
+    'AndJunction': 'AndJunction',        # Explicit AndJunction stays as is
+    'SketchModelActor': 'BusinessActor', # Sketch actor -> real ArchiMate actor
+}
+
+
+def clean_element_type(type_str):
+    """Clean and validate element type for ArchiMate XML export.
+    
+    Args:
+        type_str: Raw type string from HTML (e.g., "Junction", "DiagramModelGroup")
+    
+    Returns:
+        Cleaned type string for xsi:type, or None if element should be skipped.
+    """
+    if not type_str:
+        return None
+    
+    # Strip whitespace
+    clean_type = type_str.strip()
+    
+    # Check if this type should be skipped entirely
+    if clean_type in SKIP_ELEMENT_TYPES:
+        return None
+    
+    # Apply type mappings (includes DiagramModelGroup -> Grouping)
+    if clean_type in ELEMENT_TYPE_MAPPINGS:
+        return ELEMENT_TYPE_MAPPINGS[clean_type]
+    
+    return clean_type
+
 # ============================================================================
 # Load Documentation and Folder Structure from model.html
 # ============================================================================
@@ -387,14 +432,14 @@ def create_archimate_xml(elements, coordinates, relationships, view_name):
     elements_section = ET.SubElement(root, "elements")
     for elem_id, elem in elements.items():
         if elem_id in coordinates:  # Only include elements that are in the view
-            elem_type = elem['type']
-            # Skip non-ArchiMate types
-            if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
-                continue
+            # Use clean_element_type for proper type mapping and validation
+            cleaned_type = clean_element_type(elem['type'])
+            if cleaned_type is None:
+                continue  # Skip visual-only types
             
             element = ET.SubElement(elements_section, "element", {
                 "identifier": elem_id,
-                "xsi:type": elem_type
+                "xsi:type": cleaned_type
             })
             ET.SubElement(element, "name", {"xml:lang": "en"}).text = elem['name']
             
@@ -432,8 +477,8 @@ def create_archimate_xml(elements, coordinates, relationships, view_name):
             continue
         
         elem_type = elem['type']
-        # Skip non-ArchiMate types
-        if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+        # Skip types that should not appear in views (use clean_element_type for filtering)
+        if clean_element_type(elem_type) is None:
             continue
         
         coords = coordinates[elem_id]
@@ -461,7 +506,7 @@ def create_archimate_xml(elements, coordinates, relationships, view_name):
         node_id = gen_id("node")
         node_ids[elem_id] = node_id
         
-        # Use ABSOLUTE coordinates directly from the HTML
+        # All elements (including Grouping mapped from DiagramModelGroup) use elementRef
         ET.SubElement(view, "node", {
             "identifier": node_id,
             "elementRef": elem_id,
@@ -568,14 +613,14 @@ def create_merged_xml(all_elements, all_relationships, views_data):
     # --- Elements section (all unique elements) ---
     elements_section = ET.SubElement(root, "elements")
     for elem_id, elem in all_elements.items():
-        elem_type = elem['type']
-        # Skip non-ArchiMate types
-        if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
-            continue
+        # Use clean_element_type for proper type mapping and validation
+        cleaned_type = clean_element_type(elem['type'])
+        if cleaned_type is None:
+            continue  # Skip visual-only types
         
         element = ET.SubElement(elements_section, "element", {
             "identifier": elem_id,
-            "xsi:type": elem_type
+            "xsi:type": cleaned_type
         })
         ET.SubElement(element, "name", {"xml:lang": "en"}).text = elem['name']
         
@@ -607,8 +652,7 @@ def create_merged_xml(all_elements, all_relationships, views_data):
         
         # Add only Elements that will actually be written (skip excluded types)
         for elem_id, elem in all_elements.items():
-            elem_type = elem['type']
-            if elem_type not in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+            if clean_element_type(elem['type']) is not None:
                 valid_ids.add(elem_id)
                 
         valid_ids.update(all_relationships.keys())
@@ -724,7 +768,8 @@ def create_merged_xml(all_elements, all_relationships, views_data):
                 continue
             
             elem_type = elem['type']
-            if elem_type in ('DiagramModelNote', 'DiagramModelReference', 'Unknown'):
+            # Skip types that should not appear in views (use clean_element_type for filtering)
+            if clean_element_type(elem_type) is None:
                 continue
             
             coords = coordinates[elem_id]
@@ -744,6 +789,7 @@ def create_merged_xml(all_elements, all_relationships, views_data):
             elem_id = node_data['elem_id']
             coords = node_data['coords']
             
+            # All elements (including Grouping) use elementRef
             ET.SubElement(view, "node", {
                 "identifier": gen_id("node"),
                 "elementRef": elem_id,
