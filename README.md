@@ -41,8 +41,8 @@ Select specific views to merge into a single **Master Model XML**, or use Downlo
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/argic-archi.git
-cd argic-archi
+git clone https://github.com/your-username/archi-scraper.git
+cd archi-scraper
 
 # Create virtual environment (optional but recommended)
 python -m venv venv
