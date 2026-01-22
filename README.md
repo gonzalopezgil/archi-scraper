@@ -2,10 +2,10 @@
 
 ### An ArchiMate Web Report to XML Converter
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/your-username/archi-scraper)](https://github.com/your-username/archi-scraper/releases)
-[![GitHub downloads](https://img.shields.io/github/downloads/your-username/archi-scraper/total)](https://github.com/your-username/archi-scraper/releases)
-[![Platform](https://img.shields.io/badge/platform-windows-blue)](https://github.com/your-username/archi-scraper)
-[![License](https://img.shields.io/github/license/your-username/archi-scraper)](https://github.com/your-username/archi-scraper)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/gonzalopezgil/archi-scraper)](https://github.com/gonzalopezgil/archi-scraper/releases)
+[![GitHub downloads](https://img.shields.io/github/downloads/gonzalopezgil/archi-scraper/total)](https://github.com/gonzalopezgil/archi-scraper/releases)
+[![Platform](https://img.shields.io/badge/platform-windows-blue)](https://github.com/gonzalopezgil/archi-scraper)
+[![License](https://img.shields.io/github/license/gonzalopezgil/archi-scraper)](https://github.com/gonzalopezgil/archi-scraper)
 
 **Reverse-engineer Archi HTML reports back into editable ArchiMate models**
 
@@ -41,7 +41,7 @@ Select specific views to merge into a single **Master Model XML**, or use Downlo
 
 ### Option A: Portable Executable (Recommended)
 
-1. Download `ArchiScraper_v1.0_Portable.zip` from [Releases](https://github.com/your-username/archi-scraper/releases)
+1. Download `ArchiScraper_v1.0_Portable.zip` from [Releases](https://github.com/gonzalopezgil/archi-scraper/releases)
 2. Unzip the file.
 3. Run `ArchiScraper.exe` (no installation required).
 
@@ -49,7 +49,7 @@ Select specific views to merge into a single **Master Model XML**, or use Downlo
 
 ```bash
 # Clone the repository
-git clone [https://github.com/your-username/archi-scraper.git](https://github.com/your-username/archi-scraper.git)
+git clone [https://github.com/gonzalopezgil/archi-scraper.git](https://github.com/gonzalopezgil/archi-scraper.git)
 cd archi-scraper
 
 # Create virtual environment (optional but recommended)
@@ -62,3 +62,102 @@ pip install -r requirements.txt
 
 # Run the application
 python scripts/ArchiScraperApp.py
+
+```
+
+---
+
+## 🖥️ How to Use
+
+1. **Enter URL**: Paste the Archi HTML report URL in the address bar and click **Go**.
+2. **Wait for Model**: The status bar will show "Model Loaded" when ready (with element/folder/view counts).
+3. **Choose Export Method**:
+* **Download Active View**: Export the currently visible view.
+* **Add to Batch**: Collect multiple views, then export together.
+* **Download ALL Views**: Automatically fetch and merge every view in the model.
+
+
+4. **Import to Archi**:
+* Open Archi.
+* Go to `File → Import → Model from Open Exchange File`.
+* Select your exported `.xml` file.
+
+
+
+---
+
+## 🔧 Building the Executable
+
+For contributors who want to create a distributable `.exe`:
+
+### Prerequisites
+
+```bash
+pip install pyinstaller pillow
+
+```
+
+### Build Command
+
+```bash
+python build_app.py
+
+```
+
+### Output
+
+Find the standalone executable at:
+
+```
+dist/ArchiScraper.exe
+
+```
+
+The build script automatically:
+
+* Installs PyInstaller if missing.
+* Bundles the application icon.
+* Creates a single-file executable with no console window.
+
+---
+
+## 🛠️ Tech Stack
+
+| Component | Technology |
+| --- | --- |
+| Language | Python 3.x |
+| GUI Framework | PyQt6 |
+| Embedded Browser | PyQt6-WebEngine (Chromium) |
+| HTML Parsing | BeautifulSoup4 |
+| HTTP Requests | Requests |
+| Build Tool | PyInstaller |
+
+---
+
+## 📄 Output Format
+
+ArchiScraper generates standard **ArchiMate Open Exchange Format** XML files compatible with:
+
+* [Archi](https://www.archimatetool.com/) (primary target)
+* Other ArchiMate modeling tools that support the Open Exchange format
+
+---
+
+## ⚠️ Limitations
+
+* Only works with **Archi HTML Report** exports (standard Archi HTML export format).
+* Requires network access to the report URL.
+* Some complex nested element relationships may need manual adjustment after import.
+* Connection bendpoints are not preserved (connections are hidden in views).
+
+---
+
+## 📝 License
+
+This project is provided as-is for architectural recovery and research purposes.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
