@@ -1,5 +1,25 @@
-*.html
-*.xml
-*.archimate
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+
+# Generated data files (keep these if needed for your project)
+# *.html
+# *.xml
+# *.archimate
 *.bak
-*.ajs
