@@ -93,7 +93,7 @@ For contributors who want to create a distributable `.exe`:
 ### Prerequisites
 
 ```bash
-pip install pyinstaller pillow
+pip install -r requirements.txt
 
 ```
 
