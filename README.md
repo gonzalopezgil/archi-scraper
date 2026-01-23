@@ -4,7 +4,7 @@
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/gonzalopezgil/archi-scraper)](https://github.com/gonzalopezgil/archi-scraper/releases)
 [![GitHub downloads](https://img.shields.io/github/downloads/gonzalopezgil/archi-scraper/total)](https://github.com/gonzalopezgil/archi-scraper/releases)
-[![Platform](https://img.shields.io/badge/platform-windows-blue)](https://github.com/gonzalopezgil/archi-scraper)
+[![Platform](https://img.shields.io/badge/platform-windows%20%7C%20macos-lightgrey)](https://github.com/gonzalopezgil/archi-scraper)
 [![License](https://img.shields.io/github/license/gonzalopezgil/archi-scraper)](https://github.com/gonzalopezgil/archi-scraper)
 
 **Reverse-engineer Archi HTML reports back into editable ArchiMate models**
@@ -43,15 +43,24 @@ Select specific views to merge into a single **Master Model XML**, or use Downlo
 
 ### Option A: Portable Executable (Recommended)
 
-1. Download `ArchiScraper_v1.0_Portable.zip` from [Releases](https://github.com/gonzalopezgil/archi-scraper/releases)
+**For Windows:**
+1. Download `ArchiScraper_v1.0_Windows.zip` from [Releases](https://github.com/gonzalopezgil/archi-scraper/releases).
 2. Unzip the file.
-3. Run `ArchiScraper.exe` (no installation required).
+3. Double-click `ArchiScraper.exe`.
+   *(Note: If Windows SmartScreen prompts you, click "More Info" → "Run Anyway").*
+
+**For macOS (Apple Silicon M1/M2/M3):**
+1. Download `ArchiScraper_v1.0_macOS_Silicon.zip` from [Releases](https://github.com/gonzalopezgil/archi-scraper/releases).
+2. Unzip the file.
+3. Move `ArchiScraper.app` to your **Applications** folder.
+4. **Important:** Right-click (or Control+Click) the app and select **Open**.
+   *(Required for the first run to bypass the "Unidentified Developer" check).*
 
 ### Option B: Running from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/gonzalopezgil/archi-scraper.git
+git clone [https://github.com/gonzalopezgil/archi-scraper.git](https://github.com/gonzalopezgil/archi-scraper.git)
 cd archi-scraper
 
 # Create virtual environment (optional but recommended)
@@ -90,12 +99,13 @@ python scripts/ArchiScraperApp.py
 
 ## 🔧 Building the Executable
 
-For contributors who want to create a distributable `.exe`:
+For contributors who want to create a distributable app for their specific platform:
 
 ### Prerequisites
 
 ```bash
 pip install -r requirements.txt
+# The build script will automatically install 'pyinstaller' and 'pillow' if missing.
 
 ```
 
@@ -108,18 +118,10 @@ python build_app.py
 
 ### Output
 
-Find the standalone executable at:
+The script automatically detects your OS and builds the appropriate artifact in the `dist/` folder:
 
-```
-dist/ArchiScraper.exe
-
-```
-
-The build script automatically:
-
-* Installs PyInstaller if missing.
-* Bundles the application icon.
-* Creates a single-file executable with no console window.
+* **Windows:** `dist/ArchiScraper.exe`
+* **macOS:** `dist/ArchiScraper.app` (Bundle)
 
 ---
 
@@ -127,7 +129,7 @@ The build script automatically:
 
 | Component | Technology |
 | --- | --- |
-| Language | Python 3.13.9 (recommended) |
+| Language | Python 3.12+ (recommended) |
 | GUI Framework | PyQt6 |
 | Embedded Browser | PyQt6-WebEngine (Chromium) |
 | HTML Parsing | BeautifulSoup4 |
@@ -156,7 +158,7 @@ ArchiScraper generates standard **ArchiMate Open Exchange Format** XML files com
 
 ## 📝 License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
 
 ---
 
