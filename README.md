@@ -125,7 +125,7 @@ The build script automatically:
 
 | Component | Technology |
 | --- | --- |
-| Language | Python 3.x |
+| Language | Python 3.13.9 (recommended) |
 | GUI Framework | PyQt6 |
 | Embedded Browser | PyQt6-WebEngine (Chromium) |
 | HTML Parsing | BeautifulSoup4 |
