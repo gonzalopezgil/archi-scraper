@@ -49,7 +49,7 @@ Select specific views to merge into a single **Master Model XML**, or use Downlo
 
 ```bash
 # Clone the repository
-git clone [https://github.com/gonzalopezgil/archi-scraper.git](https://github.com/gonzalopezgil/archi-scraper.git)
+git clone https://github.com/gonzalopezgil/archi-scraper.git
 cd archi-scraper
 
 # Create virtual environment (optional but recommended)
