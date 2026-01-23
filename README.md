@@ -13,6 +13,8 @@ ArchiScraper is a Python-based tool that extracts architecture data from publish
 
 ![ArchiScraper Screenshot](icon.png)
 
+![Demo of my app](https://github.com/user-attachments/assets/0f0a302b-96b3-4da6-87bd-60af018bb9ac)
+
 ---
 
 ## ✨ Key Features
