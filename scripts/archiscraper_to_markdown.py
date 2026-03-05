@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Tuple
 
@@ -43,7 +44,8 @@ LAYER_TYPE_MAP = {
         "TechnologyService", "TechnologyFunction", "TechnologyProcess",
         "TechnologyInteraction", "TechnologyCollaboration", "TechnologyInterface",
         "TechnologyEvent", "Node", "Device", "SystemSoftware", "Path",
-        "CommunicationNetwork", "Artifact",
+        "CommunicationNetwork", "Artifact", "DistributionNetwork", "Equipment",
+        "Facility", "Material",
     },
     "motivation": {
         "Stakeholder", "Driver", "Assessment", "Goal", "Outcome", "Principle",
@@ -70,7 +72,17 @@ def get_xsi_type(elem: ET.Element) -> str:
 
 
 def parse_model(xml_path: Path) -> Tuple[str, Dict[str, Dict[str, str]], List[Dict[str, str]], List[Dict[str, object]]]:
-    tree = ET.parse(xml_path)
+    try:
+        tree = ET.parse(xml_path)
+    except FileNotFoundError:
+        print(f"Error: File not found: {xml_path}")
+        sys.exit(1)
+    except ET.ParseError as exc:
+        print(f"Error: Malformed XML in {xml_path}: {exc}")
+        sys.exit(1)
+    except Exception as exc:
+        print(f"Error: Unable to parse {xml_path}: {exc}")
+        sys.exit(1)
     root = tree.getroot()
     ns = {"a": ARCHIMATE_NS}
 
@@ -268,8 +280,6 @@ def main() -> None:
     args = parser.parse_args()
 
     xml_path = Path(args.input)
-    if not xml_path.exists():
-        raise SystemExit(f"Input XML not found: {xml_path}")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
