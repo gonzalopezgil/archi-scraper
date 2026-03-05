@@ -11,6 +11,7 @@ import re
 import uuid
 import urllib.parse
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from xml.dom import minidom
 from typing import Dict, List, Optional
 
@@ -109,6 +110,61 @@ def sanitize_filename(name: str) -> str:
     sanitized = sanitized.strip(' .')
     sanitized = re.sub(r'_+', '_', sanitized)
     return sanitized if sanitized else 'unnamed'
+
+
+def download_view_images(
+    base_url: str,
+    guid: str,
+    views: List[Dict[str, object]],
+    output_dir: str,
+    user_agent: Optional[str] = None,
+    timeout: int = 30,
+) -> tuple[int, int]:
+    """Download PNG images for each view in a report."""
+    if not base_url.endswith('/'):
+        base_url = f"{base_url}/"
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    headers = {"User-Agent": user_agent} if user_agent else None
+    total = len(views)
+    downloaded = 0
+    skipped = 0
+
+    for index, view_data in enumerate(views, start=1):
+        view_id = view_data.get('view_id')
+        view_name = view_data.get('view_name') or view_id or f"view-{index}"
+        if not view_id:
+            print(f"  Warning: Missing view_id for '{view_name}'. Skipping image.")
+            skipped += 1
+            continue
+
+        safe_name = sanitize_filename(str(view_name))
+        filename = f"{safe_name}.png"
+        file_path = output_path / filename
+        if file_path.exists():
+            filename = f"{safe_name}_{view_id}.png"
+            file_path = output_path / filename
+
+        print(f"Downloading image {index}/{total}: {filename}...")
+        image_url = f"{base_url}{guid}/images/{view_id}.png"
+
+        try:
+            response = requests.get(image_url, headers=headers, timeout=timeout)
+            if response.status_code == 404:
+                print(f"  Warning: Image not found for {view_id} (404). Skipping.")
+                skipped += 1
+                continue
+            response.raise_for_status()
+            with open(file_path, 'wb') as handle:
+                handle.write(response.content)
+            downloaded += 1
+        except requests.RequestException as exc:
+            print(f"  Warning: Failed to download image for {view_id} ({exc}). Skipping.")
+            skipped += 1
+
+    return downloaded, skipped
 
 
 # ============================================================================
@@ -484,8 +540,13 @@ class ArchiMateXMLGenerator:
                     elem_copy['type'] = cleaned_type
                     all_elements[elem_id] = elem_copy
 
+        filtered_relationships = [
+            rel for rel in relationships
+            if rel['source'] in all_elements and rel['target'] in all_elements
+        ]
+
         all_relationships: Dict[str, Dict[str, str]] = {}
-        for rel in relationships:
+        for rel in filtered_relationships:
             all_relationships[rel['id']] = rel
 
         elements_section = ET.SubElement(root, "elements")
@@ -540,7 +601,7 @@ class ArchiMateXMLGenerator:
 
         nodes_to_add.sort(key=lambda n: n['area'], reverse=True)
 
-        element_node_map: Dict[str, str] = {}
+        element_node_map: Dict[str, List[str]] = {}
         for node_data in nodes_to_add:
             elem_id = node_data['elem_id']
             coords = node_data['coords']
@@ -555,21 +616,23 @@ class ArchiMateXMLGenerator:
                 "w": str(coords['w']),
                 "h": str(coords['h']),
             })
-            element_node_map.setdefault(elem_id, node_id)
+            element_node_map.setdefault(elem_id, []).append(node_id)
 
         if include_connections:
-            for rel in relationships:
-                source_node = element_node_map.get(rel['source'])
-                target_node = element_node_map.get(rel['target'])
-                if not source_node or not target_node:
+            for rel in filtered_relationships:
+                source_nodes = element_node_map.get(rel['source'], [])
+                target_nodes = element_node_map.get(rel['target'], [])
+                if not source_nodes or not target_nodes:
                     continue
-                ET.SubElement(view, "connection", {
-                    "identifier": gen_id("conn"),
-                    "relationshipRef": rel['id'],
-                    "xsi:type": "Relationship",
-                    "source": source_node,
-                    "target": target_node,
-                })
+                for source_node in source_nodes:
+                    for target_node in target_nodes:
+                        ET.SubElement(view, "connection", {
+                            "identifier": gen_id("conn"),
+                            "relationshipRef": rel['id'],
+                            "xsi:type": "Relationship",
+                            "source": source_node,
+                            "target": target_node,
+                        })
 
         return root
 
@@ -596,7 +659,6 @@ class ArchiMateXMLGenerator:
         for view_data in views_data_list:
             elements = view_data['elements']
             coordinates = view_data['coordinates']
-            relationships = view_data['relationships']
 
             for elem_id, elem in elements.items():
                 if elem_id in coordinates:
@@ -606,7 +668,11 @@ class ArchiMateXMLGenerator:
                         elem_copy['type'] = cleaned_type
                         all_elements[elem_id] = elem_copy
 
+        for view_data in views_data_list:
+            relationships = view_data['relationships']
             for rel in relationships:
+                if rel['source'] not in all_elements or rel['target'] not in all_elements:
+                    continue
                 rel_id = rel['id']
                 if rel_id not in all_relationships:
                     all_relationships[rel_id] = rel
@@ -675,7 +741,7 @@ class ArchiMateXMLGenerator:
 
             nodes_to_add.sort(key=lambda n: n['area'], reverse=True)
 
-            element_node_map: Dict[str, str] = {}
+            element_node_map: Dict[str, List[str]] = {}
             for node_data in nodes_to_add:
                 elem_id = node_data['elem_id']
                 coords = node_data['coords']
@@ -690,21 +756,25 @@ class ArchiMateXMLGenerator:
                     "w": str(coords['w']),
                     "h": str(coords['h']),
                 })
-                element_node_map.setdefault(elem_id, node_id)
+                element_node_map.setdefault(elem_id, []).append(node_id)
 
             if include_connections:
                 for rel in relationships:
-                    source_node = element_node_map.get(rel['source'])
-                    target_node = element_node_map.get(rel['target'])
-                    if not source_node or not target_node:
+                    if rel['source'] not in all_elements or rel['target'] not in all_elements:
                         continue
-                    ET.SubElement(view, "connection", {
-                        "identifier": gen_id("conn"),
-                        "relationshipRef": rel['id'],
-                        "xsi:type": "Relationship",
-                        "source": source_node,
-                        "target": target_node,
-                    })
+                    source_nodes = element_node_map.get(rel['source'], [])
+                    target_nodes = element_node_map.get(rel['target'], [])
+                    if not source_nodes or not target_nodes:
+                        continue
+                    for source_node in source_nodes:
+                        for target_node in target_nodes:
+                            ET.SubElement(view, "connection", {
+                                "identifier": gen_id("conn"),
+                                "relationshipRef": rel['id'],
+                                "xsi:type": "Relationship",
+                                "source": source_node,
+                                "target": target_node,
+                            })
 
             print(f"  Added view '{view_data['view_name']}' with {len(nodes_to_add)} nodes")
 

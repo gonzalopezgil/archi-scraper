@@ -15,7 +15,12 @@ from urllib.parse import urlparse
 
 import requests
 
-from archiscraper_core import ArchiMateXMLGenerator, ModelDataParser, ViewParser
+from archiscraper_core import (
+    ArchiMateXMLGenerator,
+    ModelDataParser,
+    ViewParser,
+    download_view_images,
+)
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -222,6 +227,17 @@ Example usage:
         action="store_true",
         help="Include connection elements inside views (default: off)",
     )
+    parser.add_argument(
+        "--images",
+        action="store_true",
+        help="Download PNG images for each view (URL mode only)",
+    )
+    parser.add_argument(
+        "--images-dir",
+        default="images/",
+        type=str,
+        help="Directory for downloaded images (default: images/ relative to output)",
+    )
 
     args = parser.parse_args()
     validate_args(parser, args)
@@ -298,6 +314,9 @@ Example usage:
         if not model_data.load_from_file(str(model_path)):
             print("WARNING: Failed to load model.html; documentation and folders may be missing.")
 
+        if args.images:
+            print("WARNING: --images is only supported with --url. Skipping image download.")
+
         views_data = collect_view_data_from_files(view_files)
 
     print("\n--- Summary ---")
@@ -306,6 +325,19 @@ Example usage:
     if not views_data:
         print("\nERROR: No valid views found. Exiting.")
         return
+
+    if args.url and args.images:
+        images_dir = Path(args.images_dir)
+        if not images_dir.is_absolute():
+            images_dir = output_path.parent / images_dir
+        downloaded, skipped = download_view_images(
+            base_url=base_url,
+            guid=guid,
+            views=views_data,
+            output_dir=str(images_dir),
+            user_agent=args.user_agent,
+        )
+        print(f"Images downloaded: {downloaded} (skipped: {skipped})")
 
     generator = ArchiMateXMLGenerator(model_data)
     xml_root = generator.create_merged_xml(views_data, include_connections=args.connections)

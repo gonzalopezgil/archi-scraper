@@ -13,6 +13,7 @@ Prerequisites:
 
 import sys
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -32,7 +33,13 @@ from archiscraper_core import (
     ArchiMateXMLGenerator,
     ModelDataParser,
     ViewParser,
+    download_view_images,
     sanitize_filename,
+)
+
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36"
 )
 
 
@@ -74,8 +81,8 @@ class ModelUrlSniffer(QWebEngineUrlRequestInterceptor):
         """Called for every network request made by the browser."""
         url = info.requestUrl().toString()
         
-        # Check if this is a request for model.html
-        if url.endswith('/model.html') and not self._already_captured:
+        # Check if this is a request for model.html (case-insensitive, query-safe)
+        if re.search(r'model\.html(?:\\?|$)', url, re.IGNORECASE) and not self._already_captured:
             self._already_captured = True
             print(f"🔍 Found Model URL via Network: {url}")
             self.model_url_found.emit(url)
@@ -260,6 +267,11 @@ class ArchiScraperApp(QMainWindow):
         self.include_connections_checkbox = QCheckBox("Include connections in views")
         self.include_connections_checkbox.setChecked(False)
         batch_layout.addWidget(self.include_connections_checkbox)
+
+        # Image download toggle (applies to batch exports)
+        self.download_images_checkbox = QCheckBox("Download view images")
+        self.download_images_checkbox.setChecked(False)
+        batch_layout.addWidget(self.download_images_checkbox)
         
         # Download ALL views button
         self.download_all_button = QPushButton("⬇ Download ALL Views")
@@ -636,7 +648,34 @@ class ArchiScraperApp(QMainWindow):
             if file_path:
                 ArchiMateXMLGenerator.save_xml(xml_root, file_path)
                 self.status_bar.showMessage(f"✓ Master model saved: {file_path}")
-                
+
+                downloaded_images = 0
+                skipped_images = 0
+                if self.download_images_checkbox.isChecked():
+                    base_guid = self._get_image_base_and_guid()
+                    if not base_guid:
+                        QMessageBox.warning(
+                            self,
+                            "Warning",
+                            "Unable to determine image base URL from model.html.\n"
+                            "Images were not downloaded."
+                        )
+                    else:
+                        base_url, guid = base_guid
+                        images_dir = Path(file_path).parent / "images"
+                        self.status_bar.showMessage("Downloading view images...")
+                        QApplication.processEvents()
+                        downloaded_images, skipped_images = download_view_images(
+                            base_url=base_url,
+                            guid=guid,
+                            views=self.batch_views,
+                            output_dir=str(images_dir),
+                            user_agent=DEFAULT_USER_AGENT,
+                        )
+                        self.status_bar.showMessage(
+                            f"✓ Downloaded {downloaded_images} images (skipped {skipped_images})."
+                        )
+
                 # Calculate totals
                 total_elements = len(set(
                     elem_id for v in self.batch_views 
@@ -653,6 +692,7 @@ class ArchiScraperApp(QMainWindow):
                     f"Views: {len(self.batch_views)}\n"
                     f"Unique Elements: {total_elements}\n"
                     f"Unique Relationships: {total_relationships}\n\n"
+                    f"Images downloaded: {downloaded_images} (skipped {skipped_images})\n\n"
                     "Import into Archi: File → Import → Model from Open Exchange File"
                 )
             else:
@@ -767,6 +807,15 @@ class ArchiScraperApp(QMainWindow):
         
         if reply == QMessageBox.StandardButton.Yes:
             self._on_export_batch_clicked()
+
+    def _get_image_base_and_guid(self):
+        """Extract base URL and GUID from the captured model.html URL."""
+        if not self.model_url:
+            return None
+        match = re.search(r'(.*?/)(id-[A-Fa-f0-9-]+)/elements/model\\.html', self.model_url)
+        if not match:
+            return None
+        return match.group(1), match.group(2)
 
 
 # ============================================================================
