@@ -23,7 +23,7 @@ from bs4 import BeautifulSoup
 # ============================================================================
 # XML Namespaces
 # ============================================================================
-_USER_AGENTS = [
+_FALLBACK_USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -34,10 +34,19 @@ _USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
 ]
 
+try:
+    from fake_useragent import UserAgent
+    _ua = UserAgent()
 
-def get_random_user_agent() -> str:
-    """Return a random realistic browser User-Agent string."""
-    return random.choice(_USER_AGENTS)
+    def get_random_user_agent() -> str:
+        """Return a random User-Agent from real browser statistics (via fake-useragent)."""
+        return _ua.random
+except ImportError:
+    _ua = None
+
+    def get_random_user_agent() -> str:
+        """Return a random User-Agent from hardcoded fallback list."""
+        return random.choice(_FALLBACK_USER_AGENTS)
 
 
 DEFAULT_USER_AGENT = get_random_user_agent()
