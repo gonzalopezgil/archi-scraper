@@ -149,10 +149,7 @@ def build_relationship_index(
         if source in elements and target in elements:
             rel_index[source].append(("out", rel_type, target))
             rel_index[target].append(("in", rel_type, source))
-        elif source in elements:
-            rel_index[source].append(("out", rel_type, target or ""))
-        elif target in elements:
-            rel_index[target].append(("in", rel_type, source or ""))
+        # Skip relationships where one endpoint is missing (filtered element types)
 
     return rel_index
 
@@ -244,6 +241,9 @@ def write_relationships(relationships: List[Dict[str, str]], elements: Dict[str,
     for rel in sorted_rels:
         source = rel.get("source", "")
         target = rel.get("target", "")
+        # Skip relationships with missing endpoints
+        if source not in elements or target not in elements:
+            continue
         lines.append(
             f"| {display_name(source)} | {display_type(source)} | {rel.get('type', 'Unknown')} | "
             f"{display_name(target)} | {display_type(target)} |"

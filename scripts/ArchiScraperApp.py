@@ -812,7 +812,7 @@ class ArchiScraperApp(QMainWindow):
         """Extract base URL and GUID from the captured model.html URL."""
         if not self.model_url:
             return None
-        match = re.search(r'(.*?/)(id-[A-Fa-f0-9-]+)/elements/model\\.html', self.model_url)
+        match = re.search(r'(.*?/)(id-[A-Fa-f0-9-]+)/elements/model\.html', self.model_url)
         if not match:
             return None
         return match.group(1), match.group(2)
