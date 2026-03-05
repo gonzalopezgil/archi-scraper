@@ -17,29 +17,20 @@ ArchiScraper is a Python-based tool that extracts architecture data from publish
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🚀 One-Click Site Export
-Download **every view** in a report automatically with a single button click. No need to manually navigate to each diagram.
-
-### 🔍 Smart Network Sniffer
-Automatically detects `model.html` data even in complex URL structures with randomized GUIDs (common in SharePoint, corporate intranets). No manual configuration required.
-
-### 🎨 Clean Views
-Generates diagrams with a **flattened layout** and hidden connection lines to avoid "spiderweb" visual clutter—while preserving all model relationships in the underlying data.
-
-### 📁 Full Data Recovery
-Replicates the original:
-- **Folder Structure** (`<organizations>` section)
-- **Element Documentation**
-- **Properties and Types**
-
-### 📦 Batch Mode
-Select specific views to merge into a single **Master Model XML**, or use Download All to get everything at once.
+- GUI application with a PyQt6 embedded browser and network sniffer to auto-discover `model.html`
+- One-click export of the active view or all views as a master ArchiMate XML
+- Batch mode to collect multiple views and export as a single master model
+- Download ALL Views with optional connection overlays and view images
+- CLI tool for remote reports and local files, including list/select view workflows
+- Clean Views: connections are hidden by default to avoid spiderweb clutter while preserving the underlying relationships
+- XML-to-Markdown converter that creates layer-based docs for AI/LLM consumption and semantic search
+- Shared core parser/generator module used by both GUI and CLI (no UI dependencies)
 
 ---
 
-## 📥 Installation & Usage
+## Installation & Usage
 
 ### Option A: Portable Executable (Recommended)
 
@@ -47,12 +38,12 @@ Select specific views to merge into a single **Master Model XML**, or use Downlo
 1. Download `ArchiScraper_v1.0_Windows.zip` from [Releases](https://github.com/gonzalopezgil/archi-scraper/releases).
 2. Unzip the file.
 3. Double-click `ArchiScraper.exe`.
-   *(Note: If Windows SmartScreen prompts you, click "More Info" → "Run Anyway").*
+   *(Note: If Windows SmartScreen prompts you, click "More Info" -> "Run Anyway").*
 
 **For macOS (Apple Silicon M1/M2/M3):**
 1. Download `ArchiScraper_v1.0_macOS_Silicon.zip` from [Releases](https://github.com/gonzalopezgil/archi-scraper/releases).
 2. Unzip the file.
-3. Move `ArchiScraper.app` to your **Applications** folder.
+3. Move `ArchiScraper.app` to your Applications folder.
 4. **Important:** Right-click (or Control+Click) the app and select **Open**.
    *(Required for the first run to bypass the "Unidentified Developer" check).*
 
@@ -60,7 +51,7 @@ Select specific views to merge into a single **Master Model XML**, or use Downlo
 
 ```bash
 # Clone the repository
-git clone [https://github.com/gonzalopezgil/archi-scraper.git](https://github.com/gonzalopezgil/archi-scraper.git)
+git clone https://github.com/gonzalopezgil/archi-scraper.git
 cd archi-scraper
 
 # Create virtual environment (optional but recommended)
@@ -71,97 +62,112 @@ venv\Scripts\activate  # Windows
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the application
+# Run the GUI application
 python scripts/ArchiScraperApp.py
-
 ```
 
----
+### Option C: CLI Usage (html_to_archimate_xml.py)
 
-## 🖥️ How to Use
-
-1. **Enter URL**: Paste the Archi HTML report URL in the address bar and click **Go**.
-2. **Wait for Model**: The status bar will show "Model Loaded" when ready (with element/folder/view counts).
-3. **Choose Export Method**:
-* **Download Active View**: Export the currently visible view.
-* **Add to Batch**: Collect multiple views, then export together.
-* **Download ALL Views**: Automatically fetch and merge every view in the model.
-
-
-4. **Import to Archi**:
-* Open Archi.
-* Go to `File → Import → Model from Open Exchange File`.
-* Select your exported `.xml` file.
-
-
-
----
-
-## 🔧 Building the Executable
-
-For contributors who want to create a distributable app for their specific platform:
-
-### Prerequisites
+Remote URL mode:
 
 ```bash
-pip install -r requirements.txt
-# The build script will automatically install 'pyinstaller' and 'pillow' if missing.
-
+python3 scripts/html_to_archimate_xml.py --url URL [--download-all] [--list-views] \
+  [--select-views VIEW_ID [VIEW_ID ...]] [--connections] [--images] \
+  [--images-dir DIR] [--output FILE] [--user-agent STR]
 ```
 
-### Build Command
+Local file mode:
 
 ```bash
-python build_app.py
-
+python3 scripts/html_to_archimate_xml.py --model FILE --views FILE [FILE ...] --output FILE
 ```
 
-### Output
+Key CLI flags:
 
-The script automatically detects your OS and builds the appropriate artifact in the `dist/` folder:
+- `--url URL`: Archi HTML report URL (auto-discovers `model.html` GUID)
+- `--download-all`: Download all views and export as master XML
+- `--list-views`: List all views (name + ID) without downloading
+- `--select-views VIEW_ID [VIEW_ID ...]`: Download specific views only
+- `--connections`: Include connection elements in views (default: off for clean diagrams)
+- `--images`: Download PNG images for each view (URL mode only)
+- `--images-dir DIR`: Directory for downloaded images (default: `images/`)
+- `--output FILE`: Output XML filename (default: `master_model.xml`)
+- `--user-agent STR`: Custom User-Agent header
+- `--model FILE`: Path to local `model.html`
+- `--views FILE [FILE ...]`: Paths to local view HTML files
 
-* **Windows:** `dist/ArchiScraper.exe`
-* **macOS:** `dist/ArchiScraper.app` (Bundle)
+### Option D: XML-to-Markdown Converter (archiscraper_to_markdown.py)
 
----
+```bash
+python3 scripts/archiscraper_to_markdown.py --input FILE --output-dir DIR
+```
 
-## 🛠️ Tech Stack
+Outputs a structured documentation set organized by ArchiMate layer:
 
-| Component | Technology |
-| --- | --- |
-| Language | Python 3.12+ (recommended) |
-| GUI Framework | PyQt6 |
-| Embedded Browser | PyQt6-WebEngine (Chromium) |
-| HTML Parsing | BeautifulSoup4 |
-| HTTP Requests | Requests |
-| Build Tool | PyInstaller |
+- `README.md` (overview)
+- `elements/strategy.md`, `business.md`, `application.md`, `technology.md`, `motivation.md`, `implementation.md`, `other.md`
+- `relationships.md` (full relationship table)
+- `views/index.md` (all views with elements)
 
----
+Relationship directions are represented with arrows:
 
-## 📄 Output Format
-
-ArchiScraper generates standard **ArchiMate Open Exchange Format** XML files compatible with:
-
-* [Archi](https://www.archimatetool.com/) (primary target)
-* Other ArchiMate modeling tools that support the Open Exchange format
-
----
-
-## ⚠️ Limitations
-
-* Only works with **Archi HTML Report** exports (standard Archi HTML export format).
-* Requires network access to the report URL.
-* Some complex nested element relationships may need manual adjustment after import.
-* Connection bendpoints are not preserved (connections are hidden in views).
+- `A -> B` for outgoing relationships
+- `A <- B` for incoming relationships
 
 ---
 
-## 📝 License
+## Examples
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+```bash
+# List all views in a remote report
+python3 scripts/html_to_archimate_xml.py --url https://example.com/report/index.html --list-views
+
+# Download all views as master XML
+python3 scripts/html_to_archimate_xml.py --url https://example.com/report/index.html --download-all --output master.xml
+
+# Download with images and connections
+python3 scripts/html_to_archimate_xml.py --url https://example.com/report/index.html --download-all --connections --images --output master.xml
+
+# Convert XML to Markdown
+python3 scripts/archiscraper_to_markdown.py --input master.xml --output-dir model-docs/
+```
 
 ---
 
-## 🤝 Contributing
+## Architecture
+
+Shared core module design (single source of truth):
+
+```text
+ArchiScraperApp.py (GUI)
+        |\
+        | \
+        |  v
+        |  archiscraper_core.py
+        |  (ModelDataParser, ViewParser, ArchiMateXMLGenerator)
+        |
+        v
+html_to_archimate_xml.py (CLI) ----> archiscraper_to_markdown.py (Docs)
+```
+
+---
+
+## Notes / Limitations
+
+- Only works with Archi HTML Report exports (standard Archi HTML export format).
+- Remote URL mode requires network access to the report URL.
+- Some complex nested element relationships may need manual adjustment after import.
+- Connection bendpoints are not preserved; connections are hidden in views by default (Clean Views).
+- View images are only available when using `--url` + `--images`.
+
+---
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
