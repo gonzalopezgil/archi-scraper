@@ -22,4 +22,7 @@ dist/
 # *.html
 # *.xml
 # *.archimate
-*.bakdcra_master.xml
+*.bak
+dcra_master.xml
+FINAL_VERIFICATION.md
+REVIEW.md
