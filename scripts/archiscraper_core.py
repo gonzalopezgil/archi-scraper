@@ -22,6 +22,11 @@ from bs4 import BeautifulSoup
 # ============================================================================
 # XML Namespaces
 # ============================================================================
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
 ARCHIMATE_NS = "http://www.opengroup.org/xsd/archimate/3.0/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 SCHEMA_LOCATION = (
@@ -127,7 +132,7 @@ def download_view_images(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    headers = {"User-Agent": user_agent} if user_agent else None
+    headers = {"User-Agent": user_agent or DEFAULT_USER_AGENT}
     total = len(views)
     downloaded = 0
     skipped = 0
@@ -184,6 +189,8 @@ class ModelDataParser:
     def load_from_url(self, model_url: str, headers: Optional[Dict[str, str]] = None, timeout: int = 30) -> bool:
         """Download and parse model.html from a URL."""
         try:
+            if headers is None:
+                headers = {"User-Agent": DEFAULT_USER_AGENT}
             print(f"Fetching model data from: {model_url}")
             response = requests.get(model_url, headers=headers, timeout=timeout)
             response.raise_for_status()

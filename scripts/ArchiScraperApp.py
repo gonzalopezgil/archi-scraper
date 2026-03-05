@@ -433,7 +433,7 @@ class ArchiScraperApp(QMainWindow):
         
         try:
             # Download the view HTML
-            response = requests.get(iframe_src, timeout=30)
+            response = requests.get(iframe_src, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30)
             response.raise_for_status()
             view_html = response.text
             
@@ -535,7 +535,7 @@ class ArchiScraperApp(QMainWindow):
         
         try:
             # Download the view HTML
-            response = requests.get(iframe_src, timeout=30)
+            response = requests.get(iframe_src, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30)
             response.raise_for_status()
             view_html = response.text
             
@@ -761,7 +761,7 @@ class ArchiScraperApp(QMainWindow):
             
             try:
                 # Download view HTML
-                response = requests.get(view_url, timeout=30)
+                response = requests.get(view_url, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30)
                 response.raise_for_status()
                 view_html = response.text
                 
