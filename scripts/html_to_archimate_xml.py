@@ -20,12 +20,10 @@ from archiscraper_core import (
     ModelDataParser,
     ViewParser,
     download_view_images,
+    get_random_user_agent,
 )
 
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36"
-)
+DEFAULT_USER_AGENT = get_random_user_agent()
 
 
 def ensure_url_scheme(url: str) -> str:
