@@ -48,7 +48,7 @@ def discover_model_url(index_url: str, headers: Dict[str, str], timeout: int = 3
     response = requests.get(index_url, headers=headers, timeout=timeout)
     response.raise_for_status()
 
-    match = re.search(r'(id-[a-f0-9]+)/elements/model\.html', response.text)
+    match = re.search(r'(id-[A-Fa-f0-9-]+)/elements/model\.html', response.text)
     if not match:
         raise ValueError("Could not find model.html GUID path in index.html")
 
@@ -217,6 +217,11 @@ Example usage:
         type=str,
         help="Output XML filename (default: master_model.xml)",
     )
+    parser.add_argument(
+        "--connections",
+        action="store_true",
+        help="Include connection elements inside views (default: off)",
+    )
 
     args = parser.parse_args()
     validate_args(parser, args)
@@ -303,7 +308,7 @@ Example usage:
         return
 
     generator = ArchiMateXMLGenerator(model_data)
-    xml_root = generator.create_merged_xml(views_data)
+    xml_root = generator.create_merged_xml(views_data, include_connections=args.connections)
     ArchiMateXMLGenerator.save_xml(xml_root, str(output_path))
 
     print("\n" + "=" * 60)

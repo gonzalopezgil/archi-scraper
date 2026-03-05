@@ -23,7 +23,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
-    QListWidget, QLabel, QSplitter, QGroupBox, QListWidgetItem
+    QListWidget, QLabel, QSplitter, QGroupBox, QListWidgetItem, QCheckBox
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
@@ -255,6 +255,11 @@ class ArchiScraperApp(QMainWindow):
         """)
         self.export_batch_button.clicked.connect(self._on_export_batch_clicked)
         batch_layout.addWidget(self.export_batch_button)
+
+        # Connections toggle (applies to single and batch exports)
+        self.include_connections_checkbox = QCheckBox("Include connections in views")
+        self.include_connections_checkbox.setChecked(False)
+        batch_layout.addWidget(self.include_connections_checkbox)
         
         # Download ALL views button
         self.download_all_button = QPushButton("⬇ Download ALL Views")
@@ -433,7 +438,10 @@ class ArchiScraperApp(QMainWindow):
             
             # Generate XML
             generator = ArchiMateXMLGenerator(self.model_data)
-            xml_root = generator.create_single_view_xml(view_data)
+            xml_root = generator.create_single_view_xml(
+                view_data,
+                include_connections=self.include_connections_checkbox.isChecked(),
+            )
             
             # Sanitize filename
             safe_name = sanitize_filename(view_data['view_name'])
@@ -611,7 +619,10 @@ class ArchiScraperApp(QMainWindow):
         try:
             # Generate merged XML using the batch views
             generator = ArchiMateXMLGenerator(self.model_data)
-            xml_root = generator.create_merged_xml(self.batch_views)
+            xml_root = generator.create_merged_xml(
+                self.batch_views,
+                include_connections=self.include_connections_checkbox.isChecked(),
+            )
             
             # Ask user where to save
             default_name = "master_model.xml"

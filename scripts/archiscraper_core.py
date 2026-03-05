@@ -96,7 +96,7 @@ def extract_id_from_href(href: Optional[str]) -> Optional[str]:
     """Extract element/view ID from href path."""
     if not href:
         return None
-    match = re.search(r'(id-[a-f0-9-]+)\.html', href)
+    match = re.search(r'(id-[a-f0-9-]+)\.html', href, re.IGNORECASE)
     if match:
         return match.group(1)
     return None
@@ -386,11 +386,18 @@ class ViewParser:
 
                     rel_type = 'Association'
                     classes = type_link.get('class', [])
+                    raw_type = None
                     for cls in classes:
-                        if cls.startswith('i18n-elementtype-'):
-                            raw_type = cls.replace('i18n-elementtype-', '')
-                            rel_type = fix_relationship_type(raw_type)
+                        if cls.startswith('i18n-relationshiptype-'):
+                            raw_type = cls.replace('i18n-relationshiptype-', '')
                             break
+                    if raw_type is None:
+                        for cls in classes:
+                            if cls.startswith('i18n-elementtype-'):
+                                raw_type = cls.replace('i18n-elementtype-', '')
+                                break
+                    if raw_type:
+                        rel_type = fix_relationship_type(raw_type)
 
                     if rel_id and source_id and target_id:
                         relationships.append({
@@ -446,7 +453,11 @@ class ArchiMateXMLGenerator:
     def __init__(self, model_data: ModelDataParser) -> None:
         self.model_data = model_data
 
-    def create_single_view_xml(self, view_data: Dict[str, object]) -> ET.Element:
+    def create_single_view_xml(
+        self,
+        view_data: Dict[str, object],
+        include_connections: bool = False,
+    ) -> ET.Element:
         """Create ArchiMate XML for a single view with folder structure."""
         model_id = gen_id("model")
 
@@ -529,12 +540,14 @@ class ArchiMateXMLGenerator:
 
         nodes_to_add.sort(key=lambda n: n['area'], reverse=True)
 
+        element_node_map: Dict[str, str] = {}
         for node_data in nodes_to_add:
             elem_id = node_data['elem_id']
             coords = node_data['coords']
 
+            node_id = gen_id("node")
             ET.SubElement(view, "node", {
-                "identifier": gen_id("node"),
+                "identifier": node_id,
                 "elementRef": elem_id,
                 "xsi:type": "Element",
                 "x": str(coords['x']),
@@ -542,10 +555,29 @@ class ArchiMateXMLGenerator:
                 "w": str(coords['w']),
                 "h": str(coords['h']),
             })
+            element_node_map.setdefault(elem_id, node_id)
+
+        if include_connections:
+            for rel in relationships:
+                source_node = element_node_map.get(rel['source'])
+                target_node = element_node_map.get(rel['target'])
+                if not source_node or not target_node:
+                    continue
+                ET.SubElement(view, "connection", {
+                    "identifier": gen_id("conn"),
+                    "relationshipRef": rel['id'],
+                    "xsi:type": "Relationship",
+                    "source": source_node,
+                    "target": target_node,
+                })
 
         return root
 
-    def create_merged_xml(self, views_data_list: List[Dict[str, object]]) -> ET.Element:
+    def create_merged_xml(
+        self,
+        views_data_list: List[Dict[str, object]],
+        include_connections: bool = False,
+    ) -> ET.Element:
         """Create a single ArchiMate XML with all elements, relationships, and views."""
         model_id = gen_id("model")
 
@@ -621,6 +653,7 @@ class ArchiMateXMLGenerator:
 
             elements = view_data['elements']
             coordinates = view_data['coordinates']
+            relationships = view_data['relationships']
 
             nodes_to_add = []
             for elem_id, elem in elements.items():
@@ -642,12 +675,14 @@ class ArchiMateXMLGenerator:
 
             nodes_to_add.sort(key=lambda n: n['area'], reverse=True)
 
+            element_node_map: Dict[str, str] = {}
             for node_data in nodes_to_add:
                 elem_id = node_data['elem_id']
                 coords = node_data['coords']
 
+                node_id = gen_id("node")
                 ET.SubElement(view, "node", {
-                    "identifier": gen_id("node"),
+                    "identifier": node_id,
                     "elementRef": elem_id,
                     "xsi:type": "Element",
                     "x": str(coords['x']),
@@ -655,6 +690,21 @@ class ArchiMateXMLGenerator:
                     "w": str(coords['w']),
                     "h": str(coords['h']),
                 })
+                element_node_map.setdefault(elem_id, node_id)
+
+            if include_connections:
+                for rel in relationships:
+                    source_node = element_node_map.get(rel['source'])
+                    target_node = element_node_map.get(rel['target'])
+                    if not source_node or not target_node:
+                        continue
+                    ET.SubElement(view, "connection", {
+                        "identifier": gen_id("conn"),
+                        "relationshipRef": rel['id'],
+                        "xsi:type": "Relationship",
+                        "source": source_node,
+                        "target": target_node,
+                    })
 
             print(f"  Added view '{view_data['view_name']}' with {len(nodes_to_add)} nodes")
 
