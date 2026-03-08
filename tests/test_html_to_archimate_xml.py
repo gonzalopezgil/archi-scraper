@@ -110,5 +110,75 @@ class TestUrlValidation(unittest.TestCase):
         )
 
 
+class TestBuildBaseUrl(unittest.TestCase):
+    def test_with_html(self) -> None:
+        self.assertEqual(
+            module.build_base_url("https://example.com/report/index.html"),
+            "https://example.com/report/",
+        )
+
+    def test_without_html(self) -> None:
+        self.assertEqual(
+            module.build_base_url("https://example.com/report"),
+            "https://example.com/report/",
+        )
+
+    def test_trailing_slash(self) -> None:
+        self.assertEqual(
+            module.build_base_url("https://example.com/report/"),
+            "https://example.com/report/",
+        )
+
+
+class TestDiscoverModelUrl(unittest.TestCase):
+    def test_raises_on_missing_guid(self) -> None:
+        class DummyResponse:
+            text = "<html><body>No GUID here</body></html>"
+
+            def raise_for_status(self) -> None:
+                return None
+
+        session = unittest.mock.Mock()
+        session.get.return_value = DummyResponse()
+
+        with self.assertRaises(ValueError):
+            module.discover_model_url(
+                "https://example.com/report/index.html",
+                headers={},
+                timeout=5,
+                session=session,
+            )
+
+    def test_discovers_guid(self) -> None:
+        class DummyResponse:
+            text = '<a href="id-abc123/elements/model.html">model</a>'
+
+            def raise_for_status(self) -> None:
+                return None
+
+        session = unittest.mock.Mock()
+        session.get.return_value = DummyResponse()
+
+        base_url, guid, model_url = module.discover_model_url(
+            "https://example.com/report/index.html",
+            headers={},
+            timeout=5,
+            session=session,
+        )
+
+        self.assertEqual(base_url, "https://example.com/report/")
+        self.assertEqual(guid, "id-abc123")
+        self.assertEqual(
+            model_url,
+            "https://example.com/report/id-abc123/elements/model.html",
+        )
+
+
+class TestCollectViewDataFromFiles(unittest.TestCase):
+    def test_skips_missing_file(self) -> None:
+        missing = Path("missing-view.html")
+        self.assertEqual(module.collect_view_data_from_files([missing]), [])
+
+
 if __name__ == "__main__":
     unittest.main()

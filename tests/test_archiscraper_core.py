@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -14,7 +16,12 @@ from archiscraper_core import (
     ArchiMateXMLGenerator,
     ModelDataParser,
     ViewParser,
+    clean_element_type,
+    decode_url,
     download_view_images,
+    extract_id_from_href,
+    fix_relationship_type,
+    sanitize_filename,
 )
 
 
@@ -149,6 +156,111 @@ class TestDownloadViewImages(unittest.TestCase):
             self.assertEqual(skipped, 0)
             self.assertTrue((Path(tmpdir) / "View 1.png").exists())
 
+
+class TestDownloadViewImagesAdditional(unittest.TestCase):
+    def test_download_skips_404(self) -> None:
+        views = [{"view_id": "id-view404", "view_name": "Missing View"}]
+
+        class DummyResponse:
+            status_code = 404
+
+            def raise_for_status(self) -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = Mock()
+            session.get.return_value = DummyResponse()
+            downloaded, skipped = download_view_images(
+                base_url="http://example.com/report/",
+                guid="id-guid",
+                views=views,
+                output_dir=tmpdir,
+                user_agent="UA",
+                timeout=5,
+                session=session,
+            )
+
+        self.assertEqual(downloaded, 0)
+        self.assertEqual(skipped, 1)
+
+    def test_download_handles_request_exception(self) -> None:
+        views = [{"view_id": "id-view500", "view_name": "Error View"}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = Mock()
+            session.get.side_effect = requests.ConnectionError("boom")
+            downloaded, skipped = download_view_images(
+                base_url="http://example.com/report/",
+                guid="id-guid",
+                views=views,
+                output_dir=tmpdir,
+                user_agent="UA",
+                timeout=5,
+                session=session,
+            )
+
+        self.assertEqual(downloaded, 0)
+        self.assertEqual(skipped, 1)
+
+
+class TestCleanElementType(unittest.TestCase):
+    def test_skip_types(self) -> None:
+        self.assertIsNone(clean_element_type("DiagramModelNote"))
+        self.assertIsNone(clean_element_type("DiagramModelReference"))
+        self.assertIsNone(clean_element_type("SketchModelSticky"))
+        self.assertIsNone(clean_element_type("Unknown"))
+
+    def test_mapping_types(self) -> None:
+        self.assertEqual(clean_element_type("DiagramModelGroup"), "Grouping")
+        self.assertEqual(clean_element_type("Junction"), "AndJunction")
+        self.assertEqual(clean_element_type("OrJunction"), "OrJunction")
+
+    def test_passthrough(self) -> None:
+        self.assertEqual(clean_element_type("ApplicationComponent"), "ApplicationComponent")
+
+
+class TestSanitizeFilename(unittest.TestCase):
+    def test_removes_illegal_chars(self) -> None:
+        self.assertEqual(sanitize_filename("my:file*name?.xml"), "my_file_name_.xml")
+
+    def test_empty_string(self) -> None:
+        self.assertEqual(sanitize_filename(""), "unnamed")
+
+    def test_only_dots(self) -> None:
+        self.assertEqual(sanitize_filename("..."), "unnamed")
+
+    def test_strips_spaces(self) -> None:
+        self.assertEqual(sanitize_filename("  hello  "), "hello")
+
+
+class TestFixRelationshipType(unittest.TestCase):
+    def test_strips_suffix(self) -> None:
+        self.assertEqual(fix_relationship_type("AssignmentRelationship"), "Assignment")
+
+    def test_no_suffix(self) -> None:
+        self.assertEqual(fix_relationship_type("Aggregation"), "Aggregation")
+
+
+class TestDecodeUrl(unittest.TestCase):
+    def test_decodes(self) -> None:
+        self.assertEqual(decode_url("Hello%20World"), "Hello World")
+
+    def test_none(self) -> None:
+        self.assertIsNone(decode_url(None))
+
+    def test_empty(self) -> None:
+        self.assertIn(decode_url(""), (None, ""))
+
+
+class TestExtractIdFromHref(unittest.TestCase):
+    def test_valid(self) -> None:
+        self.assertEqual(extract_id_from_href("id-abc123def4.html"), "id-abc123def4")
+
+    def test_no_match(self) -> None:
+        self.assertIsNone(extract_id_from_href("random.html"))
+
+    def test_none(self) -> None:
+        self.assertIsNone(extract_id_from_href(None))
 class TestXMLGeneration(unittest.TestCase):
     def test_xml_generation_contains_elements_relationships_views(self) -> None:
         model_data = ModelDataParser()
