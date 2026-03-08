@@ -4,7 +4,7 @@
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/gonzalopezgil/archi-scraper)](https://github.com/gonzalopezgil/archi-scraper/releases)
 [![GitHub downloads](https://img.shields.io/github/downloads/gonzalopezgil/archi-scraper/total)](https://github.com/gonzalopezgil/archi-scraper/releases)
-[![Tests](https://img.shields.io/badge/tests-41%20passing-brightgreen)](https://github.com/gonzalopezgil/archi-scraper)
+[![Tests](https://img.shields.io/badge/tests-57%20passing-brightgreen)](https://github.com/gonzalopezgil/archi-scraper)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://github.com/gonzalopezgil/archi-scraper)
 [![License](https://img.shields.io/github/license/gonzalopezgil/archi-scraper)](https://github.com/gonzalopezgil/archi-scraper)
 
@@ -167,7 +167,7 @@ html_to_archimate_xml.py (CLI) ----> archiscraper_to_markdown.py (Docs)
 
 ```bash
 pip install -e ".[dev]"
-pytest -v                  # 41 tests
+pytest -v                  # 57 tests
 ```
 
 ### Running tests
@@ -196,7 +196,7 @@ Tests cover: core parser, XML generation, relationship extraction, type mapping,
 - [x] XML, JSON, and Markdown output formats
 - [x] Retry with exponential backoff
 - [x] XML validation
-- [x] 41 unit tests
+- [x] 57 unit tests
 - [ ] GitHub Actions CI
 - [ ] PyPI package
 - [ ] Progress callbacks for CLI (verbose mode)

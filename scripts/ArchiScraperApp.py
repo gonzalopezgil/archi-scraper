@@ -1092,15 +1092,20 @@ class ArchiScraperApp(QMainWindow):
     def _enter_done_step(self, success: bool, summary: str, files_text: str):
         self.done_header_label.setText("Export complete" if success else "Export failed")
         self.done_summary_label.setText(summary)
-        self.done_files_label.setText(files_text or "<span style='color:#777;'>No files generated.</span>")
+        self.done_files_label.setText(files_text)
         self.open_folder_button.setEnabled(bool(self.export_output_dir))
         self.validate_xml_button.setEnabled(bool(self.last_xml_path))
         self.retry_export_button.setVisible(not success)
-        self.done_header_label.setStyleSheet(
-            "background: #fff3e0; color: #c45000; padding: 8px 16px; border-radius: 8px; "
-            "border-left: 2px solid #e8601c; font-size: 13px; font-weight: 500; "
-            "/* legacy #e6f4ea */ /* legacy #fce8e6 */"
-        )
+        if success:
+            self.done_header_label.setStyleSheet(
+                "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
+                "border-radius: 6px; border-left: 3px solid #34a853;"
+            )
+        else:
+            self.done_header_label.setStyleSheet(
+                "background-color: #fce8e6; color: #b3261e; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
+                "border-radius: 6px; border-left: 3px solid #d93025;"
+            )
         self._go_to_step(4)
         if success:
             self.done_stepper.update_step(5)  # All 4 steps show checkmarks

@@ -15,7 +15,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.dom import minidom
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 import logging
 
 import requests
@@ -80,6 +80,26 @@ def decode_url(s: Optional[str]) -> Optional[str]:
     if s:
         return urllib.parse.unquote_plus(s)
     return s
+
+
+def ensure_url_scheme(url: str) -> str:
+    """Ensure the URL has a scheme (default http://)."""
+    if not url.startswith(("http://", "https://")):
+        return f"http://{url}"
+    return url
+
+
+def build_base_url(url: str) -> str:
+    """Compute the base URL by removing a filename and forcing trailing slash."""
+    parsed = urllib.parse.urlparse(url)
+    path = parsed.path
+
+    if path.endswith(".html") or path.endswith(".htm"):
+        path = path.rsplit("/", 1)[0] + "/"
+    elif not path.endswith("/"):
+        path = path + "/"
+
+    return f"{parsed.scheme}://{parsed.netloc}{path}"
 
 
 def fix_relationship_type(rel_type: str) -> str:
@@ -189,6 +209,21 @@ def fetch_with_retry(
                 time.sleep(delay)
                 retries += 1
                 continue
+            except requests.Timeout as exc:
+                if retries >= max_retries:
+                    raise
+                delay = backoff_factor * (2 ** retries)
+                logger.warning(
+                    "Retrying %s (%d/%d) in %.1fs due to timeout: %s",
+                    url,
+                    retries + 1,
+                    max_retries,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+                retries += 1
+                continue
 
             status = response.status_code
             if status == 429:
@@ -232,6 +267,43 @@ def fetch_with_retry(
     finally:
         if owns_session:
             session.close()
+
+
+def collect_view_data_from_files(
+    view_files: List[Path],
+    include_preview_html: bool = False,
+    progress_callback: Optional[Callable[[int, int, Path], None]] = None,
+    log: Optional[logging.Logger] = None,
+) -> List[Dict[str, object]]:
+    """Load and parse local view HTML files."""
+    views_data: List[Dict[str, object]] = []
+    total = len(view_files)
+
+    for index, html_path in enumerate(view_files, start=1):
+        if progress_callback:
+            progress_callback(index, total, html_path)
+
+        if not html_path.exists():
+            if log:
+                log.warning("Skipping (not found): %s", html_path)
+            continue
+
+        with open(html_path, "r", encoding="utf-8") as handle:
+            html_content = handle.read()
+
+        view_data = ViewParser.parse(html_content)
+        if not view_data:
+            if log:
+                log.warning("  Warning: No coordinates found. Skipping: %s", html_path)
+            continue
+
+        if include_preview_html:
+            view_data["preview_html"] = html_content
+            view_data["local_path"] = str(html_path)
+
+        views_data.append(view_data)
+
+    return views_data
 
 
 def download_view_images(

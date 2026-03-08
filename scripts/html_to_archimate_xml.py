@@ -13,7 +13,6 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 
 import requests
 
@@ -22,33 +21,16 @@ from archiscraper_core import (
     ArchiMateXMLGenerator,
     ModelDataParser,
     ViewParser,
+    build_base_url,
+    collect_view_data_from_files,
     download_view_images,
+    ensure_url_scheme,
     fetch_with_retry,
     get_random_user_agent,
 )
 
 DEFAULT_USER_AGENT = get_random_user_agent()
 logger = logging.getLogger(__name__)
-
-
-def ensure_url_scheme(url: str) -> str:
-    """Ensure the URL has a scheme (default http://)."""
-    if not url.startswith(('http://', 'https://')):
-        return f"http://{url}"
-    return url
-
-
-def build_base_url(url: str) -> str:
-    """Compute the base URL by removing the filename and ensuring a trailing slash."""
-    parsed = urlparse(url)
-    path = parsed.path
-
-    if path.endswith('.html') or path.endswith('.htm'):
-        path = path.rsplit('/', 1)[0] + '/'
-    elif not path.endswith('/'):
-        path = path + '/'
-
-    return f"{parsed.scheme}://{parsed.netloc}{path}"
 
 
 def discover_model_url(
@@ -126,35 +108,6 @@ def collect_view_data_from_urls(
         if not view_data:
             logger.warning("  Warning: No coordinates found for %s. Skipping.", view_id)
             continue
-
-        views_data.append(view_data)
-
-    return views_data
-
-
-def collect_view_data_from_files(view_files: List[Path]) -> List[Dict[str, object]]:
-    """Load and parse local view HTML files."""
-    views_data: List[Dict[str, object]] = []
-
-    for html_path in view_files:
-        if not html_path.exists():
-            logger.warning("Skipping (not found): %s", html_path)
-            continue
-
-        logger.info("\nProcessing: %s", html_path)
-        with open(html_path, 'r', encoding='utf-8') as handle:
-            html_content = handle.read()
-
-        view_data = ViewParser.parse(html_content)
-        if not view_data:
-            logger.warning("  Warning: No coordinates found. Skipping.")
-            continue
-
-        logger.info("  View: %s", view_data['view_name'])
-        logger.info("  View ID: %s", view_data['view_id'])
-        logger.info("  Elements: %d", len(view_data['elements']))
-        logger.info("  Relationships: %d", len(view_data['relationships']))
-        logger.info("  Coordinates: %d", len(view_data['coordinates']))
 
         views_data.append(view_data)
 
@@ -368,7 +321,7 @@ Example usage:
         if args.images:
             logger.warning("WARNING: --images is only supported with --url. Skipping image download.")
 
-        views_data = collect_view_data_from_files(view_files)
+        views_data = collect_view_data_from_files(view_files, log=logger)
 
     logger.info("\n--- Summary ---")
     logger.info("Total views: %d", len(views_data))

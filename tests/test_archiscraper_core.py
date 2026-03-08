@@ -17,9 +17,11 @@ from archiscraper_core import (
     ArchiMateXMLGenerator,
     ModelDataParser,
     ViewParser,
+    build_base_url,
     clean_element_type,
     decode_url,
     download_view_images,
+    ensure_url_scheme,
     extract_id_from_href,
     fetch_with_retry,
     fix_relationship_type,
@@ -345,6 +347,61 @@ class TestFetchWithRetry(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         session.get.assert_called_once()
+
+    def test_retries_on_timeout_then_succeeds(self) -> None:
+        class DummyResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+                self.headers = {}
+
+        session = Mock()
+        session.get.side_effect = [
+            requests.Timeout("slow"),
+            DummyResponse(200),
+        ]
+
+        with patch("archiscraper_core.time.sleep") as sleep_mock:
+            response = fetch_with_retry(session, "http://example.com", {}, 5, max_retries=2)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(session.get.call_count, 2)
+        sleep_mock.assert_called_once()
+
+    def test_connection_error_raises_after_retries(self) -> None:
+        session = Mock()
+        session.get.side_effect = requests.ConnectionError("offline")
+
+        with patch("archiscraper_core.time.sleep") as sleep_mock:
+            with self.assertRaises(requests.ConnectionError):
+                fetch_with_retry(session, "http://example.com", {}, 5, max_retries=1)
+
+        self.assertEqual(session.get.call_count, 2)
+        sleep_mock.assert_called_once()
+
+
+class TestUrlHelpers(unittest.TestCase):
+    def test_ensure_url_scheme_adds_http(self) -> None:
+        self.assertEqual(ensure_url_scheme("example.com/report"), "http://example.com/report")
+
+    def test_ensure_url_scheme_keeps_https(self) -> None:
+        self.assertEqual(
+            ensure_url_scheme("https://example.com/report/index.html"),
+            "https://example.com/report/index.html",
+        )
+
+    def test_build_base_url_strips_html(self) -> None:
+        self.assertEqual(
+            build_base_url("https://example.com/report/index.html"),
+            "https://example.com/report/",
+        )
+
+    def test_build_base_url_adds_trailing_slash(self) -> None:
+        self.assertEqual(
+            build_base_url("https://example.com/report"),
+            "https://example.com/report/",
+        )
+
+
 class TestXMLGeneration(unittest.TestCase):
     def test_xml_generation_contains_elements_relationships_views(self) -> None:
         model_data = ModelDataParser()
@@ -387,6 +444,75 @@ class TestXMLGeneration(unittest.TestCase):
         self.assertEqual(len(relationships), 1)
         self.assertEqual(len(views), 1)
         self.assertGreaterEqual(len(connections), 1)
+
+    def test_create_merged_xml_handles_empty_views(self) -> None:
+        generator = ArchiMateXMLGenerator(ModelDataParser())
+        root = generator.create_merged_xml([])
+
+        self.assertEqual(root.find("name").text, "Master Architecture Model")
+        self.assertIsNotNone(root.find("elements"))
+        self.assertIsNotNone(root.find("views"))
+        diagrams = root.find("views/diagrams")
+        self.assertIsNotNone(diagrams)
+        self.assertEqual(len(list(diagrams)), 0)
+
+    def test_create_merged_xml_deduplicates_and_filters_skip_types(self) -> None:
+        model_data = ModelDataParser()
+        model_data.elements = {
+            "id-a": {"id": "id-a", "name": "A", "documentation": "Doc A"},
+            "id-b": {"id": "id-b", "name": "B", "documentation": "Doc B"},
+            "id-note": {"id": "id-note", "name": "Note", "documentation": ""},
+        }
+
+        views = [
+            {
+                "view_name": "View 1",
+                "view_id": "id-view1",
+                "elements": {
+                    "id-a": {"id": "id-a", "name": "A", "type": "ApplicationComponent"},
+                    "id-note": {"id": "id-note", "name": "Note", "type": "DiagramModelNote"},
+                },
+                "relationships": [
+                    {"id": "id-r1", "type": "Association", "source": "id-a", "target": "id-a", "name": "Self"},
+                ],
+                "coordinates": {
+                    "id-a": {"x": 0, "y": 0, "w": 100, "h": 80, "x2": 100, "y2": 80},
+                    "id-note": {"x": 5, "y": 5, "w": 50, "h": 40, "x2": 55, "y2": 45},
+                },
+            },
+            {
+                "view_name": "View 2",
+                "view_id": "id-view2",
+                "elements": {
+                    "id-a": {"id": "id-a", "name": "A", "type": "ApplicationComponent"},
+                    "id-b": {"id": "id-b", "name": "B", "type": "ApplicationService"},
+                },
+                "relationships": [
+                    {"id": "id-r1", "type": "Association", "source": "id-a", "target": "id-a", "name": "Self"},
+                    {"id": "id-r2", "type": "Serving", "source": "id-a", "target": "id-b", "name": "AB"},
+                ],
+                "coordinates": {
+                    "id-a": {"x": 10, "y": 10, "w": 100, "h": 80, "x2": 110, "y2": 90},
+                    "id-b": {"x": 120, "y": 20, "w": 110, "h": 90, "x2": 230, "y2": 110},
+                },
+            },
+        ]
+
+        generator = ArchiMateXMLGenerator(model_data)
+        root = generator.create_merged_xml(views, include_connections=True)
+
+        elements = [elem for elem in root.iter() if elem.tag.endswith("element")]
+        relationships = [rel for rel in root.iter() if rel.tag.endswith("relationship")]
+        views_xml = [view for view in root.iter() if view.tag.endswith("view")]
+        connections = [conn for conn in root.iter() if conn.tag.endswith("connection")]
+
+        element_ids = {elem.attrib.get("identifier") for elem in elements}
+        relationship_ids = {rel.attrib.get("identifier") for rel in relationships}
+
+        self.assertEqual(element_ids, {"id-a", "id-b"})
+        self.assertEqual(relationship_ids, {"id-r1", "id-r2"})
+        self.assertEqual(len(views_xml), 2)
+        self.assertGreaterEqual(len(connections), 2)
 
 
 class TestXMLValidation(unittest.TestCase):

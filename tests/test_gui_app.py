@@ -1,8 +1,10 @@
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+import xml.etree.ElementTree as ET
 
 try:
     from PyQt6.QtWidgets import QApplication, QWidget, QFrame, QGraphicsDropShadowEffect, QCheckBox
@@ -69,7 +71,7 @@ class TestWizardGui(unittest.TestCase):
             self.assertEqual(window.load_local_button.text(), "Open Local Files...")
             self.assertEqual(window.title_label.text(), "ArchiScraper")
             self.assertEqual(window.settings_button.text(), "Settings")
-            self.assertEqual(window.version_label.text(), "1.4.0")
+            self.assertTrue(bool(window.version_label.text()))
             self.assertEqual(window.size().width(), 1000)
             self.assertEqual(window.size().height(), 650)
             self.assertFalse(window.isMaximized())
@@ -185,6 +187,73 @@ class TestWizardGui(unittest.TestCase):
             self.assertEqual(window.done_header_label.text(), "Export failed")
             self.assertIn("#fce8e6", window.done_header_label.styleSheet())
             self.assertFalse(window.retry_export_button.isHidden())
+            window.close()
+
+    def test_version_fallback_is_150(self) -> None:
+        with patch.object(module, "QWebEngineView", DummyWebEngineView):
+            with patch.object(
+                module.metadata,
+                "version",
+                side_effect=module.metadata.PackageNotFoundError,
+            ):
+                window = module.ArchiScraperApp()
+            self.assertEqual(window.version_label.text(), "1.5.0")
+            window.close()
+
+    def test_gui_export_flow_uses_merged_export(self) -> None:
+        with patch.object(module, "QWebEngineView", DummyWebEngineView):
+            window = module.ArchiScraperApp()
+            window.model_data.loaded = True
+            window.available_views = [
+                {
+                    "view_id": "id-view1",
+                    "view_name": "View 1",
+                    "elements": {
+                        "id-a": {"id": "id-a", "name": "A", "type": "ApplicationComponent"},
+                    },
+                    "relationships": [],
+                    "coordinates": {
+                        "id-a": {"x": 0, "y": 0, "w": 100, "h": 80, "x2": 100, "y2": 80},
+                    },
+                }
+            ]
+            window.selected_view_ids = {"id-view1"}
+            window.both_radio.setChecked(True)
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                window.output_dir_input.setText(tmpdir)
+                window.output_name_input.setText("export_test")
+                with patch.object(module, "ArchiMateXMLGenerator") as generator_cls:
+                    generator = generator_cls.return_value
+                    generator.create_merged_xml.return_value = ET.Element("model")
+                    generator.export_json.return_value = {"name": "test", "elements": [], "relationships": [], "views": []}
+                    window._enter_done_step = Mock()
+
+                    window._on_export_clicked()
+
+                self.assertTrue(generator.create_merged_xml.called)
+                self.assertTrue(generator.export_json.called)
+                window._enter_done_step.assert_called_once()
+                success = window._enter_done_step.call_args.args[0]
+                self.assertTrue(success)
+            window.close()
+
+    def test_view_filtering_no_match_clears_selection(self) -> None:
+        with patch.object(module, "QWebEngineView", DummyWebEngineView):
+            window = module.ArchiScraperApp()
+            window.model_data.elements = {"e1": {}}
+            window.available_views = [
+                {"view_id": "view-1", "view_name": "Application Overview", "elements": {"e1": {}}},
+                {"view_id": "view-2", "view_name": "Technology Landscape", "elements": {"e1": {}}},
+            ]
+            window._enter_review_step()
+
+            window.review_filter_input.setText("nomatch")
+
+            self.assertIsNone(window.view_list.currentItem())
+            self.assertTrue(window.view_list.item(0).isHidden())
+            self.assertTrue(window.view_list.item(1).isHidden())
+            self.assertEqual(window.preview_stack.currentWidget(), window.preview_placeholder)
             window.close()
 
 
