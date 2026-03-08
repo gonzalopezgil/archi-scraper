@@ -18,16 +18,20 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+from typing import Optional
 
-from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt, QObject
+from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
-    QListWidget, QLabel, QSplitter, QGroupBox, QListWidgetItem, QCheckBox
+    QListWidget, QLabel, QSplitter, QGroupBox, QListWidgetItem, QCheckBox,
+    QDialog, QDialogButtonBox
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
+
+import archiscraper_to_markdown as markdown_converter
 
 from archiscraper_core import (
     ArchiMateXMLGenerator,
@@ -80,7 +84,7 @@ class ModelUrlSniffer(QWebEngineUrlRequestInterceptor):
         url = info.requestUrl().toString()
         
         # Check if this is a request for model.html (case-insensitive, query-safe)
-        if re.search(r'model\.html(?:\\?|$)', url, re.IGNORECASE) and not self._already_captured:
+        if re.search(r'model\.html(?:\?|$)', url, re.IGNORECASE) and not self._already_captured:
             self._already_captured = True
             print(f"🔍 Found Model URL via Network: {url}")
             self.model_url_found.emit(url)
@@ -142,18 +146,27 @@ class ArchiScraperApp(QMainWindow):
         
         # Top bar: Address bar + Go button
         top_bar = QHBoxLayout()
-        
+
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("Enter Archi HTML report URL (e.g., http://server/report/index.html)")
         self.url_input.returnPressed.connect(self._on_go_clicked)
         top_bar.addWidget(self.url_input)
-        
+
         self.go_button = QPushButton("Go")
         self.go_button.setFixedWidth(80)
         self.go_button.clicked.connect(self._on_go_clicked)
         top_bar.addWidget(self.go_button)
-        
+
         browser_layout.addLayout(top_bar)
+
+        # User-Agent input for HTTP requests
+        user_agent_bar = QHBoxLayout()
+        user_agent_label = QLabel("User-Agent:")
+        self.user_agent_input = QLineEdit()
+        self.user_agent_input.setText(DEFAULT_USER_AGENT)
+        user_agent_bar.addWidget(user_agent_label)
+        user_agent_bar.addWidget(self.user_agent_input)
+        browser_layout.addLayout(user_agent_bar)
         
         # Web view with network interceptor
         self.web_view = QWebEngineView()
@@ -208,7 +221,11 @@ class ArchiScraperApp(QMainWindow):
         """)
         self.add_to_batch_button.clicked.connect(self._on_add_to_batch_clicked)
         bottom_bar.addWidget(self.add_to_batch_button)
-        
+
+        self.single_image_checkbox = QCheckBox("Download view image")
+        self.single_image_checkbox.setChecked(False)
+        bottom_bar.addWidget(self.single_image_checkbox)
+
         bottom_bar.addStretch()
         browser_layout.addLayout(bottom_bar)
         
@@ -270,7 +287,16 @@ class ArchiScraperApp(QMainWindow):
         self.download_images_checkbox = QCheckBox("Download view images")
         self.download_images_checkbox.setChecked(False)
         batch_layout.addWidget(self.download_images_checkbox)
-        
+
+        # List/select views controls
+        self.list_views_button = QPushButton("List Views")
+        self.list_views_button.clicked.connect(self._on_list_views_clicked)
+        batch_layout.addWidget(self.list_views_button)
+
+        self.select_views_button = QPushButton("Select Views...")
+        self.select_views_button.clicked.connect(self._on_select_views_clicked)
+        batch_layout.addWidget(self.select_views_button)
+
         # Download ALL views button
         self.download_all_button = QPushButton("⬇ Download ALL Views")
         self.download_all_button.setFixedHeight(50)
@@ -293,6 +319,16 @@ class ArchiScraperApp(QMainWindow):
         """)
         self.download_all_button.clicked.connect(self._on_download_all_clicked)
         batch_layout.addWidget(self.download_all_button)
+
+        # Local report loader
+        self.load_local_button = QPushButton("Load Local Views...")
+        self.load_local_button.clicked.connect(self._on_load_local_clicked)
+        batch_layout.addWidget(self.load_local_button)
+
+        # XML to Markdown conversion
+        self.markdown_button = QPushButton("Convert XML → Markdown")
+        self.markdown_button.clicked.connect(self._on_convert_markdown_clicked)
+        batch_layout.addWidget(self.markdown_button)
         
         splitter.addWidget(batch_widget)
         
@@ -305,6 +341,84 @@ class ArchiScraperApp(QMainWindow):
         self.status_bar.showMessage("Ready. Enter a URL to begin.")
         
         self._update_batch_ui()
+
+    def _get_user_agent(self) -> str:
+        """Return the User-Agent string for HTTP requests."""
+        user_agent = self.user_agent_input.text().strip()
+        return user_agent or DEFAULT_USER_AGENT
+
+    def _get_views_base_url(self) -> Optional[str]:
+        """Derive the views base URL from the captured model.html URL."""
+        if not self.model_url:
+            return None
+        parsed = urlparse(self.model_url)
+        path = parsed.path
+        if not path.endswith("/elements/model.html"):
+            return None
+        base_path = path[: -len("elements/model.html")] + "views/"
+        return f"{parsed.scheme}://{parsed.netloc}{base_path}"
+
+    def _add_view_to_batch(self, view_data: dict) -> bool:
+        """Add a parsed view to the batch list if not already present."""
+        for existing in self.batch_views:
+            if existing['view_id'] == view_data['view_id']:
+                return False
+        self.batch_views.append(view_data)
+        item = QListWidgetItem(f"📊 {view_data['view_name']} ({len(view_data['elements'])} elements)")
+        item.setData(Qt.ItemDataRole.UserRole, view_data['view_id'])
+        self.batch_list.addItem(item)
+        return True
+
+    def _download_views_by_ids(self, view_ids: list[str], clear_batch: bool = False) -> tuple[int, int]:
+        """Download and parse the selected views from the report."""
+        views_base_url = self._get_views_base_url()
+        if not views_base_url:
+            QMessageBox.warning(
+                self, "Error",
+                "Unable to determine views URL base.\n"
+                "Make sure the report is loaded and model.html was detected."
+            )
+            return 0, len(view_ids)
+
+        if clear_batch:
+            self.batch_views.clear()
+            self.batch_list.clear()
+
+        success_count = 0
+        fail_count = 0
+        total_views = len(view_ids)
+
+        for i, view_id in enumerate(view_ids, 1):
+            view_info = self.model_data.views.get(view_id, {})
+            view_name = view_info.get('name', view_id)
+            self.status_bar.showMessage(f"Processing view {i}/{total_views}: {view_name}...")
+            QApplication.processEvents()
+
+            view_url = f"{views_base_url}{view_id}.html"
+            try:
+                response = requests.get(
+                    view_url,
+                    headers={"User-Agent": self._get_user_agent()},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                view_html = response.text
+                view_data = ViewParser.parse(view_html)
+                if view_data:
+                    if self._add_view_to_batch(view_data):
+                        success_count += 1
+                        print(f"  [{i}/{total_views}] ✓ {view_name}")
+                    else:
+                        print(f"  [{i}/{total_views}] ↺ {view_name} (already in batch)")
+                else:
+                    fail_count += 1
+                    print(f"  [{i}/{total_views}] ✗ {view_name} - No coordinates found")
+            except Exception as exc:
+                fail_count += 1
+                print(f"  [{i}/{total_views}] ✗ {view_name} - Error: {exc}")
+
+        self._update_batch_ui()
+        return success_count, fail_count
     
     def _update_batch_ui(self):
         """Update the batch panel UI to reflect current state."""
@@ -366,8 +480,8 @@ class ArchiScraperApp(QMainWindow):
         print(f"🎯 Network Sniffer captured model.html: {model_url}")
         self.model_url = model_url  # Store for Download All Views feature
         self.status_bar.showMessage(f"Fetching model data from: {model_url}...")
-        
-        if self.model_data.load_from_url(model_url):
+
+        if self.model_data.load_from_url(model_url, headers={"User-Agent": self._get_user_agent()}):
             elem_count = len(self.model_data.elements)
             folder_count = len(self.model_data.folders)
             view_count = len(self.model_data.views)
@@ -431,7 +545,11 @@ class ArchiScraperApp(QMainWindow):
         
         try:
             # Download the view HTML
-            response = requests.get(iframe_src, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30)
+            response = requests.get(
+                iframe_src,
+                headers={"User-Agent": self._get_user_agent()},
+                timeout=30,
+            )
             response.raise_for_status()
             view_html = response.text
             
@@ -468,7 +586,29 @@ class ArchiScraperApp(QMainWindow):
             if file_path:
                 ArchiMateXMLGenerator.save_xml(xml_root, file_path)
                 self.status_bar.showMessage(f"✓ Saved: {file_path}")
-                
+
+                downloaded_images = 0
+                skipped_images = 0
+                if self.single_image_checkbox.isChecked():
+                    base_guid = self._get_image_base_and_guid()
+                    if not base_guid:
+                        QMessageBox.warning(
+                            self,
+                            "Warning",
+                            "Unable to determine image base URL from model.html.\n"
+                            "Image was not downloaded."
+                        )
+                    else:
+                        base_url, guid = base_guid
+                        images_dir = Path(file_path).parent / "images"
+                        downloaded_images, skipped_images = download_view_images(
+                            base_url=base_url,
+                            guid=guid,
+                            views=[view_data],
+                            output_dir=str(images_dir),
+                            user_agent=self._get_user_agent(),
+                        )
+
                 # Count docs added
                 doc_count = sum(1 for e in view_data['elements'].values() 
                                if self.model_data.get_element_documentation(e['id']))
@@ -479,6 +619,7 @@ class ArchiScraperApp(QMainWindow):
                     f"Elements: {len(view_data['elements'])}\n"
                     f"Relationships: {len(view_data['relationships'])}\n"
                     f"Documentation: {doc_count} elements\n\n"
+                    f"Images downloaded: {downloaded_images} (skipped {skipped_images})\n\n"
                     "Import into Archi: File → Import → Model from Open Exchange File"
                 )
             else:
@@ -533,7 +674,11 @@ class ArchiScraperApp(QMainWindow):
         
         try:
             # Download the view HTML
-            response = requests.get(iframe_src, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30)
+            response = requests.get(
+                iframe_src,
+                headers={"User-Agent": self._get_user_agent()},
+                timeout=30,
+            )
             response.raise_for_status()
             view_html = response.text
             
@@ -553,12 +698,7 @@ class ArchiScraperApp(QMainWindow):
                     return
             
             # Add to batch
-            self.batch_views.append(view_data)
-            
-            # Add to list widget
-            item = QListWidgetItem(f"📊 {view_data['view_name']} ({len(view_data['elements'])} elements)")
-            item.setData(Qt.ItemDataRole.UserRole, view_data['view_id'])
-            self.batch_list.addItem(item)
+            self._add_view_to_batch(view_data)
             
             self._update_batch_ui()
             
@@ -668,7 +808,7 @@ class ArchiScraperApp(QMainWindow):
                             guid=guid,
                             views=self.batch_views,
                             output_dir=str(images_dir),
-                            user_agent=DEFAULT_USER_AGENT,
+                            user_agent=self._get_user_agent(),
                         )
                         self.status_bar.showMessage(
                             f"✓ Downloaded {downloaded_images} images (skipped {skipped_images})."
@@ -721,10 +861,6 @@ class ArchiScraperApp(QMainWindow):
             )
             return
         
-        # Calculate views base URL
-        # model_url: .../id-GUID/elements/model.html -> .../id-GUID/views/
-        views_base_url = self.model_url.replace('/elements/model.html', '/views/')
-        
         view_ids = list(self.model_data.views.keys())
         total_views = len(view_ids)
         
@@ -738,54 +874,8 @@ class ArchiScraperApp(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.No:
             return
-        
-        # Clear existing batch
-        self.batch_views.clear()
-        self.batch_list.clear()
-        
-        # Process each view
-        success_count = 0
-        fail_count = 0
-        
-        for i, view_id in enumerate(view_ids, 1):
-            view_info = self.model_data.views[view_id]
-            view_name = view_info.get('name', view_id)
-            
-            self.status_bar.showMessage(f"Processing view {i}/{total_views}: {view_name}...")
-            QApplication.processEvents()  # Keep UI responsive
-            
-            # Construct view URL
-            view_url = f"{views_base_url}{view_id}.html"
-            
-            try:
-                # Download view HTML
-                response = requests.get(view_url, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30)
-                response.raise_for_status()
-                view_html = response.text
-                
-                # Parse the view
-                view_data = ViewParser.parse(view_html)
-                if view_data:
-                    # Add to batch
-                    self.batch_views.append(view_data)
-                    
-                    # Add to list widget
-                    item = QListWidgetItem(f"📊 {view_data['view_name']} ({len(view_data['elements'])} elements)")
-                    item.setData(Qt.ItemDataRole.UserRole, view_data['view_id'])
-                    self.batch_list.addItem(item)
-                    
-                    success_count += 1
-                    print(f"  [{i}/{total_views}] ✓ {view_name}")
-                else:
-                    fail_count += 1
-                    print(f"  [{i}/{total_views}] ✗ {view_name} - No coordinates found")
-            
-            except Exception as e:
-                fail_count += 1
-                print(f"  [{i}/{total_views}] ✗ {view_name} - Error: {e}")
-        
-        # Update batch UI
-        self._update_batch_ui()
+
+        success_count, fail_count = self._download_views_by_ids(view_ids, clear_batch=True)
         
         self.status_bar.showMessage(
             f"✓ Downloaded {success_count} views ({fail_count} failed). Ready to export."
@@ -810,10 +900,157 @@ class ArchiScraperApp(QMainWindow):
         """Extract base URL and GUID from the captured model.html URL."""
         if not self.model_url:
             return None
-        match = re.search(r'(.*?/)(id-[A-Fa-f0-9-]+)/elements/model\.html', self.model_url)
+        parsed = urlparse(self.model_url)
+        match = re.search(r'(.*?/)(id-[A-Fa-f0-9-]+)/elements/model\.html$', parsed.path)
         if not match:
             return None
-        return match.group(1), match.group(2)
+        base_path, guid = match.group(1), match.group(2)
+        base_url = f"{parsed.scheme}://{parsed.netloc}{base_path}"
+        return base_url, guid
+
+    def _on_list_views_clicked(self):
+        """Show a dialog listing all available views."""
+        if not self.model_data.views:
+            QMessageBox.information(self, "No Views", "No views found in model data.")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Available Views")
+        layout = QVBoxLayout(dialog)
+        list_widget = QListWidget()
+        for view_id, view in sorted(self.model_data.views.items(), key=lambda item: item[1].get('name', '').lower()):
+            name = view.get('name', view_id)
+            list_widget.addItem(f"{name} ({view_id})")
+        layout.addWidget(list_widget)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def _on_select_views_clicked(self):
+        """Let the user select specific views to download."""
+        if not self.model_data.views:
+            QMessageBox.information(self, "No Views", "No views found in model data.")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Views")
+        layout = QVBoxLayout(dialog)
+        list_widget = QListWidget()
+        for view_id, view in sorted(self.model_data.views.items(), key=lambda item: item[1].get('name', '').lower()):
+            name = view.get('name', view_id)
+            item = QListWidgetItem(f"{name} ({view_id})")
+            item.setData(Qt.ItemDataRole.UserRole, view_id)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            list_widget.addItem(item)
+        layout.addWidget(list_widget)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected_ids = []
+        for idx in range(list_widget.count()):
+            item = list_widget.item(idx)
+            if item.checkState() == Qt.CheckState.Checked:
+                selected_ids.append(item.data(Qt.ItemDataRole.UserRole))
+
+        if not selected_ids:
+            QMessageBox.information(self, "No Selection", "No views selected.")
+            return
+
+        success_count, fail_count = self._download_views_by_ids(selected_ids, clear_batch=False)
+        QMessageBox.information(
+            self,
+            "Download Complete",
+            f"Downloaded {success_count} view(s).\nFailed: {fail_count}."
+        )
+
+    def _on_load_local_clicked(self):
+        """Load local model.html and view HTML files into the batch."""
+        model_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select model.html",
+            "",
+            "HTML Files (*.html *.htm);;All Files (*)"
+        )
+        if not model_path:
+            return
+
+        view_files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select view HTML files",
+            "",
+            "HTML Files (*.html *.htm);;All Files (*)"
+        )
+        if not view_files:
+            return
+
+        self.model_data = ModelDataParser()
+        self.model_url = None
+        self.base_url = None
+
+        if not self.model_data.load_from_file(model_path):
+            QMessageBox.warning(
+                self,
+                "Warning",
+                "Failed to load model.html. Documentation and folders may be missing."
+            )
+
+        added = 0
+        skipped = 0
+        for view_file in view_files:
+            try:
+                with open(view_file, 'r', encoding='utf-8') as handle:
+                    view_html = handle.read()
+                view_data = ViewParser.parse(view_html)
+                if view_data and self._add_view_to_batch(view_data):
+                    added += 1
+                else:
+                    skipped += 1
+            except Exception as exc:
+                skipped += 1
+                print(f"Failed to load {view_file}: {exc}")
+
+        self._update_batch_ui()
+        QMessageBox.information(
+            self,
+            "Local Views Loaded",
+            f"Added {added} view(s).\nSkipped: {skipped}."
+        )
+
+    def _on_convert_markdown_clicked(self):
+        """Convert an ArchiMate XML file to Markdown output."""
+        xml_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select ArchiMate XML",
+            "",
+            "ArchiMate XML Files (*.xml);;All Files (*)"
+        )
+        if not xml_path:
+            return
+
+        output_dir = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+        if not output_dir:
+            return
+
+        try:
+            model_name, elements, relationships, views = markdown_converter.parse_model(Path(xml_path))
+            rel_index = markdown_converter.build_relationship_index(elements, relationships)
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            markdown_converter.write_readme(output_path, model_name, len(elements), len(relationships), len(views))
+            markdown_converter.write_elements_files(elements, rel_index, output_path)
+            markdown_converter.write_relationships(relationships, elements, output_path)
+            markdown_converter.write_views(views, elements, output_path)
+            QMessageBox.information(self, "Success", f"Markdown written to:\n{output_dir}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to convert XML:\n{exc}")
 
 
 # ============================================================================
