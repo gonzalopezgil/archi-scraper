@@ -74,15 +74,12 @@ def get_xsi_type(elem: ET.Element) -> str:
 def parse_model(xml_path: Path) -> Tuple[str, Dict[str, Dict[str, str]], List[Dict[str, str]], List[Dict[str, object]]]:
     try:
         tree = ET.parse(xml_path)
-    except FileNotFoundError:
-        print(f"Error: File not found: {xml_path}")
-        sys.exit(1)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"File not found: {xml_path}") from exc
     except ET.ParseError as exc:
-        print(f"Error: Malformed XML in {xml_path}: {exc}")
-        sys.exit(1)
+        raise ValueError(f"Malformed XML in {xml_path}: {exc}") from exc
     except Exception as exc:
-        print(f"Error: Unable to parse {xml_path}: {exc}")
-        sys.exit(1)
+        raise RuntimeError(f"Unable to parse {xml_path}: {exc}") from exc
     root = tree.getroot()
     ns = {"a": ARCHIMATE_NS}
 
@@ -284,7 +281,11 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model_name, elements, relationships, views = parse_model(xml_path)
+    try:
+        model_name, elements, relationships, views = parse_model(xml_path)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
     rel_index = build_relationship_index(elements, relationships)
 
     write_readme(output_dir, model_name, len(elements), len(relationships), len(views))
