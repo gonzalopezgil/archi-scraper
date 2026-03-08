@@ -25,7 +25,7 @@ import requests
 from typing import Optional
 
 from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt, QEvent
-from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor, QPalette
+from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor, QPalette, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox,
@@ -259,6 +259,7 @@ class ArchiScraperApp(QMainWindow):
         self.last_export_error = None
         self.pending_export = False
         self.current_source_url = None
+        self.model_guid = None
         self.user_agent_input = QLineEdit()
         self.timeout_input = QLineEdit("60")
 
@@ -280,14 +281,14 @@ class ArchiScraperApp(QMainWindow):
             QMainWindow {
                 background: #f5f5f5;
                 color: #222;
-                font-size: 13px;
+                font-size: 14px;
             }
             QWidget#centralWidget {
                 background: #f5f5f5;
             }
             QWidget {
                 color: #222;
-                font-size: 13px;
+                font-size: 14px;
             }
             QFrame[card="true"] {
                 background: white;
@@ -298,21 +299,23 @@ class ArchiScraperApp(QMainWindow):
                 background: transparent;
             }
             QLabel[title="true"] {
-                font-size: 28px;
+                font-size: 20px;
                 font-weight: 700;
             }
             QLabel[header="true"] {
-                font-size: 18px;
+                font-size: 16px;
                 font-weight: 600;
             }
             QLabel[subtle="true"] {
                 color: #666;
+                font-size: 12px;
             }
             QPushButton {
-                min-height: 36px;
+                min-height: 32px;
                 padding: 0 12px;
                 border-radius: 8px;
                 border: none;
+                font-size: 14px;
             }
             QPushButton[primary="true"] {
                 background: #e8601c;
@@ -340,9 +343,11 @@ class ArchiScraperApp(QMainWindow):
                 spacing: 6px;
             }
             QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-                border: 2px solid #999;
+                width: 16px;
+                height: 16px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #ccc;
                 border-radius: 3px;
                 background: white;
             }
@@ -350,30 +355,53 @@ class ArchiScraperApp(QMainWindow):
                 border: 2px solid #e8601c;
                 border-radius: 3px;
                 background: #e8601c;
-                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6.3 L4.7 9 L10 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
             }
-            QCheckBox#download_images_checkbox::indicator,
-            QCheckBox#include_connections_checkbox::indicator,
-            QCheckBox#markdown_checkbox::indicator {
-                width: 16px;
-                height: 16px;
-                border: 2px solid #999;
-                border-radius: 3px;
-                background: white;
-            }
-            QCheckBox#download_images_checkbox::indicator:checked,
-            QCheckBox#include_connections_checkbox::indicator:checked,
-            QCheckBox#markdown_checkbox::indicator:checked {
-                border: 2px solid #e8601c;
-                border-radius: 3px;
-                background: #e8601c;
-                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6.3 L4.7 9 L10 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+            QCheckBox::indicator:unchecked:hover {
+                border-color: #e8601c;
             }
             QLineEdit, QListWidget {
                 background: white;
                 border: 1px solid #d7d7d7;
                 border-radius: 8px;
                 padding: 8px 10px;
+            }
+            QListWidget::item:selected {
+                background: #fff3e0;
+                color: #222;
+                border-left: 3px solid #e8601c;
+                padding-left: 4px;
+            }
+            QListWidget::item:hover:!selected {
+                background: #fafafa;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 8px;
+                margin: 0;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 4px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(0, 0, 0, 0.35);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+            QScrollBar:horizontal {
+                height: 0;
+            }
+            QSplitter::handle {
+                background: #e0e0e0;
+            }
+            QSplitter::handle:horizontal {
+                width: 1px;
             }
             QProgressBar {
                 background: #ededed;
@@ -536,6 +564,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_review_page(self):
         page = QWidget()
+        page.setStyleSheet("font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 14px;")
 
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -543,7 +572,7 @@ class ArchiScraperApp(QMainWindow):
         card = self._build_card()
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(12)
+        card_layout.setSpacing(8)
 
         self.review_stepper = StepperWidget()
         card_layout.addWidget(self.review_stepper)
@@ -551,40 +580,63 @@ class ArchiScraperApp(QMainWindow):
         self.review_header_label = QLabel("Model loaded successfully")
         self.review_header_label.setProperty("header", True)
         self.review_header_label.setStyleSheet(
-            "background-color: #e6f4ea; padding: 8px 12px; border-radius: 6px; border-left: 3px solid #34a853;"
+            "background: #fff3e0; color: #c45000; padding: 6px 12px; border-radius: 8px; "
+            "border-left: 2px solid #e8601c; font-size: 13px; font-weight: 500;"
+            " /* legacy #e6f4ea */"
         )
         card_layout.addWidget(self.review_header_label)
+        card_layout.addSpacing(16)
 
         self.review_stats_label = QLabel("")
         self.review_stats_label.setProperty("subtle", True)
         card_layout.addWidget(self.review_stats_label)
+        card_layout.addSpacing(8)
 
+        selection_row = QHBoxLayout()
+        selection_row.setContentsMargins(0, 0, 0, 0)
+        selection_row.setSpacing(8)
         self.review_selection_label = QLabel("")
-        self.review_selection_label.setStyleSheet("font-weight: 600; color: #222;")
-        card_layout.addWidget(self.review_selection_label)
+        self.review_selection_label.setStyleSheet("font-weight: 600; color: #222; font-size: 14px;")
+        selection_row.addWidget(self.review_selection_label)
+        self.deselect_button = QPushButton("Deselect all")
+        self.deselect_button.clicked.connect(self._toggle_select_all_views)
+        self.deselect_button.setStyleSheet(
+            "background: transparent; color: #e8601c; border: none; font-size: 13px; "
+            "padding: 0; text-decoration: none;"
+        )
+        self.select_all_button = self.deselect_button
+        selection_row.addWidget(self.deselect_button)
+        selection_row.addStretch(1)
+        card_layout.addLayout(selection_row)
+        card_layout.addSpacing(8)
 
-        controls = QHBoxLayout()
-        controls.setSpacing(12)
-        self.select_all_button = QPushButton("Select All")
-        self.select_all_button.setProperty("secondary", True)
-        self.select_all_button.clicked.connect(self._toggle_select_all_views)
-        controls.addWidget(self.select_all_button)
-        controls.addStretch(1)
-        card_layout.addLayout(controls)
+        self.review_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.review_splitter.setChildrenCollapsible(False)
+        self.review_splitter.setHandleWidth(1)
 
+        left_panel = QFrame()
+        left_panel.setStyleSheet("QFrame { border: none; background: transparent; }")
+        left_panel_layout = QVBoxLayout(left_panel)
+        left_panel_layout.setContentsMargins(0, 0, 0, 0)
+        left_panel_layout.setSpacing(0)
+        filter_container = QWidget()
+        filter_layout = QHBoxLayout(filter_container)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setSpacing(8)
         self.review_filter_input = QLineEdit()
         self.review_filter_input.setPlaceholderText("Filter views...")
         self.review_filter_input.setClearButtonEnabled(True)
         self.review_filter_input.textChanged.connect(self._filter_review_list)
-        card_layout.addWidget(self.review_filter_input)
-
-        self.review_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.review_splitter.setChildrenCollapsible(False)
+        filter_layout.addWidget(self.review_filter_input, 1)
+        left_panel_layout.addWidget(filter_container)
 
         self.view_list = QListWidget()
+        self.view_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.view_list.setWordWrap(True)
         self.view_list.currentItemChanged.connect(self._on_view_current_item_changed)
         self.view_list.viewport().installEventFilter(self)
-        self.review_splitter.addWidget(self.view_list)
+        left_panel_layout.addWidget(self.view_list, 1)
+        self.review_splitter.addWidget(left_panel)
 
         self.preview_container = QFrame()
         self.preview_container.setStyleSheet(
@@ -597,13 +649,29 @@ class ArchiScraperApp(QMainWindow):
         self.preview_placeholder = QLabel("Click a view to preview")
         self.preview_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_placeholder.setStyleSheet(
-            "color: #999; font-size: 16px; font-weight: 500; background: #fafafa;"
+            "color: #666; font-size: 16px; font-weight: 500; background: #fafafa;"
             " border: 2px dashed #d0d0d0; border-radius: 8px; padding: 40px;"
         )
         self.preview_placeholder.setMinimumHeight(200)
         self.preview_stack.addWidget(self.preview_placeholder)
 
+        # Image preview via QLabel + QPixmap (QWebEngineView can't render in inactive QStackedWidget)
+        self.review_image_label = QLabel()
+        self.review_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.review_image_label.setStyleSheet("background: #fafafa; border: none;")
+        self.review_image_label.setScaledContents(False)
+        scroll_area = __import__('PyQt6.QtWidgets', fromlist=['QScrollArea']).QScrollArea()
+        scroll_area.setWidget(self.review_image_label)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { background: #fafafa; border: none; }")
+        self.review_image_scroll = scroll_area
+        self.preview_stack.addWidget(self.review_image_scroll)
+
         self.review_preview = QTextBrowser()
+        self.review_preview.setFont(QFont("-apple-system", 14))
+        self.review_preview.document().setDefaultStyleSheet(
+            "body { font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 14px; color: #222; }"
+        )
         self.review_preview.setOpenExternalLinks(True)
         self.review_preview.setStyleSheet("QTextBrowser { background: #fafafa; border: none; }")
         self.preview_stack.addWidget(self.review_preview)
@@ -615,13 +683,21 @@ class ArchiScraperApp(QMainWindow):
 
         nav = QHBoxLayout()
         nav.setSpacing(12)
-        self.review_back_button = QPushButton("← Back")
-        self.review_back_button.setProperty("secondary", True)
+        self.review_back_button = QPushButton("Back")
+        self.review_back_button.setStyleSheet(
+            "background: transparent; color: #666; border: 1px solid #d0d0d0; "
+            "border-radius: 8px; padding: 0 20px; font-size: 13px;"
+        )
+        self.review_back_button.setFixedHeight(32)
         self.review_back_button.clicked.connect(lambda: self._go_to_step(1))
         nav.addWidget(self.review_back_button)
         nav.addStretch(1)
-        self.review_next_button = QPushButton("Next →")
-        self.review_next_button.setStyleSheet("background: #e8601c; color: white; font-weight: 600; min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;")
+        self.review_next_button = QPushButton("Next")
+        self.review_next_button.setStyleSheet(
+            "background: #e8601c; color: white; border: none; border-radius: 8px; "
+            "padding: 0 20px; font-size: 13px; font-weight: 600;"
+        )
+        self.review_next_button.setFixedHeight(32)
         self.review_next_button.setEnabled(False)
         self.review_next_button.clicked.connect(self._go_to_options_step)
         nav.addWidget(self.review_next_button)
@@ -698,11 +774,8 @@ class ArchiScraperApp(QMainWindow):
         self.download_images_checkbox.setObjectName("download_images_checkbox")
         checkbox_indicator_style = (
             "QCheckBox::indicator { width: 16px; height: 16px; }"
-            "QCheckBox::indicator:unchecked { border: 2px solid #999; border-radius: 3px; background: white; }"
-            "QCheckBox::indicator:checked {"
-            " border: 2px solid #e8601c; border-radius: 3px; background: #e8601c;"
-            " image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6.3 L4.7 9 L10 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>\");"
-            "}"
+            "QCheckBox::indicator:unchecked { border: 2px solid #ccc; border-radius: 3px; background: white; }"
+            "QCheckBox::indicator:checked { border: 2px solid #e8601c; border-radius: 3px; background: #e8601c; }"
         )
         self.markdown_checkbox.setStyleSheet(checkbox_indicator_style)
         self.include_connections_checkbox.setStyleSheet(checkbox_indicator_style)
@@ -913,9 +986,9 @@ class ArchiScraperApp(QMainWindow):
         self.review_next_button.setEnabled(selected_count > 0)
         self.review_selection_label.setText(f"{selected_count} of {total_count} views selected")
         if total_count and selected_count == total_count:
-            self.select_all_button.setText("Deselect All")
+            self.deselect_button.setText("Deselect All")
         else:
-            self.select_all_button.setText("Select All")
+            self.deselect_button.setText("Select All")
 
     def _build_review_list(self):
         self.view_list.blockSignals(True)
@@ -1002,6 +1075,8 @@ class ArchiScraperApp(QMainWindow):
         self._update_selection_ui()
 
     def eventFilter(self, obj, event):
+        if not hasattr(self, 'view_list'):
+            return super().eventFilter(obj, event)
         if obj == self.view_list.viewport() and event.type() == QEvent.Type.MouseButtonRelease:
             pos = event.pos()
             item = self.view_list.itemAt(pos)
@@ -1056,16 +1131,44 @@ class ArchiScraperApp(QMainWindow):
         if not view_data:
             self.preview_stack.setCurrentWidget(self.preview_placeholder)
             return
-        preview_html = view_data.get("preview_html")
-        if preview_html:
-            self.review_preview.setHtml(preview_html)
-        else:
-            # Generate metadata preview when raw HTML unavailable
-            self.review_preview.setHtml(self._generate_view_summary(view_data))
+        # Try to show the diagram image
+        view_id = view_data.get("view_id", "")
+        if self.current_source_url and view_id and hasattr(self, 'model_guid') and self.model_guid:
+            result = self._get_image_base_and_guid()
+            if result:
+                base_url, guid = result
+                image_url = f"{base_url}{guid}/images/{view_id}.png"
+                try:
+                    headers = {"User-Agent": self._get_user_agent()}
+                    resp = self.session.get(image_url, headers=headers, timeout=10)
+                    if resp.status_code == 200 and b'PNG' in resp.content[:8]:
+                        from PyQt6.QtGui import QPixmap
+                        pixmap = QPixmap()
+                        pixmap.loadFromData(resp.content)
+                        if not pixmap.isNull():
+                            # Scale to fit preview width while keeping aspect ratio
+                            scaled = pixmap.scaledToWidth(
+                                max(self.preview_stack.width() - 20, 400),
+                                Qt.TransformationMode.SmoothTransformation
+                            )
+                            self.review_image_label.setPixmap(scaled)
+                            self.preview_stack.setCurrentWidget(self.review_image_scroll)
+                            return
+                except Exception:
+                    pass
+        # Fallback to generated metadata summary
+        self.review_preview.setHtml(self._generate_view_summary(view_data))
         self.preview_stack.setCurrentWidget(self.review_preview)
 
     def _generate_view_summary(self, view_data: dict) -> str:
-        name = view_data.get("view_name", view_data.get("view_id", "Unknown"))
+        view_name = (view_data.get("view_name") or "").strip()
+        view_id = (view_data.get("view_id") or "").strip()
+        name = view_name or view_id or "Unknown"
+        view_id_line = ""
+        if view_id and view_id != view_name:
+            view_id_line = (
+                f"<p style='color:#666;margin:0 0 8px 0; font-size: 12px;'>ID: {view_id}</p>"
+            )
         elements = view_data.get("elements", {})
         relationships = view_data.get("relationships", [])
         content = ""
@@ -1074,27 +1177,35 @@ class ArchiScraperApp(QMainWindow):
             for eid, info in list(elements.items())[:50]:
                 etype = info.get("type", "Unknown") if isinstance(info, dict) else "Element"
                 ename = info.get("name", eid) if isinstance(info, dict) else str(info)
-                rows += f"<tr><td style='padding:4px 8px;border-bottom:1px solid #ddd'>{ename}</td>"
-                rows += f"<td style='padding:4px 8px;border-bottom:1px solid #ddd;color:#666'>{etype}</td></tr>"
+                rows += f"<tr><td style='padding:8px;border-bottom:1px solid #ddd'>{ename}</td>"
+                rows += f"<td style='padding:8px;border-bottom:1px solid #ddd;color:#666'>{etype}</td></tr>"
             if len(elements) > 50:
-                rows += f"<tr><td colspan='2' style='padding:4px 8px;color:#999'>... and {len(elements) - 50} more</td></tr>"
+                rows += f"<tr><td colspan='2' style='padding:8px;color:#666'>... and {len(elements) - 50} more</td></tr>"
             content = f"""<table cellspacing='0' cellpadding='0' width='100%' style='border:1px solid #ddd'>
-                <tr><th style='background-color:#e8601c;color:white;padding:6px 8px;text-align:left'>Element</th>
-                <th style='background-color:#e8601c;color:white;padding:6px 8px;text-align:left'>Type</th></tr>
+                <tr><th style='background-color:#e8601c;color:white;padding:8px;text-align:left;font-size:14px'>Element</th>
+                <th style='background-color:#e8601c;color:white;padding:8px;text-align:left;font-size:14px'>Type</th></tr>
                 {rows}</table>"""
         else:
-            content = "<p style='color:#666'>Element details not available for this view."
-            content += "<br><small style='color:#999'>The source report serves view content dynamically. "
+            content = "<p style='color:#666;font-size:14px'>Element details not available for this view."
+            content += "<br><small style='color:#666;font-size:12px'>The source report serves view content dynamically. "
             content += "Elements will be included in the exported XML/JSON.</small></p>"
-        return f"""<html><body style='margin:16px;color:#222'>
-            <h2 style='margin:0 0 2px 0'>{name}</h2>
-            <p style='color:#666;margin:0 0 12px 0'>{len(elements)} elements &middot; {len(relationships)} relationships</p>
+        return f"""<html>
+        <head>
+            <style>
+                a {{ color: #e8601c; text-decoration: none; }}
+                a:hover {{ text-decoration: underline; }}
+            </style>
+        </head>
+        <body style='margin:16px; font-family: -apple-system, sans-serif; color: #222; font-size: 14px;'>
+            <h2 style='margin:0 0 8px 0; font-size: 20px; font-family: -apple-system, sans-serif; color: #222;'>{name}</h2>
+            {view_id_line}
+            <p style='color:#666;margin:0 0 16px 0; font-size: 12px; font-family: -apple-system, sans-serif;'>{len(elements)} elements, {len(relationships)} relationships</p>
             {content}
         </body></html>"""
 
     def _set_review_splitter_sizes(self):
         total_width = max(self.review_splitter.size().width(), 1000)
-        self.review_splitter.setSizes([int(total_width * 0.5), int(total_width * 0.5)])
+        self.review_splitter.setSizes([int(total_width * 0.48), int(total_width * 0.52)])
 
     def _go_to_options_step(self):
         if not self.selected_view_ids:
@@ -1135,6 +1246,9 @@ class ArchiScraperApp(QMainWindow):
     @pyqtSlot(str)
     def _on_model_url_found(self, model_url):
         self.model_url = model_url
+        # Extract GUID for image preview URLs
+        result = self._get_image_base_and_guid()
+        self.model_guid = result[1] if result else None
         self._set_status_message(f"Fetching model data from: {model_url}...")
 
         if not self.model_data.load_from_url(

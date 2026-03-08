@@ -32,6 +32,9 @@ if HAS_PYQT6:
         def runJavaScript(self, *args, **kwargs):
             return None
 
+        def setBackgroundColor(self, *args, **kwargs):
+            pass
+
     class DummyWebEngineView(QWidget):
         def __init__(self, *args, **kwargs):
             super().__init__()
