@@ -42,7 +42,6 @@ from archiscraper_core import (
     sanitize_filename,
 )
 
-DEFAULT_USER_AGENT = get_random_user_agent()
 
 
 def resource_path(relative_path):
@@ -131,6 +130,13 @@ class ArchiScraperApp(QMainWindow):
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+
+        self.setStyleSheet("""
+            QPushButton:disabled {
+                background-color: #e0e0e0;
+                color: #999999;
+            }
+        """)
         
         # Main horizontal layout with splitter
         main_layout = QHBoxLayout(central_widget)
@@ -148,6 +154,9 @@ class ArchiScraperApp(QMainWindow):
         # Top bar: Address bar + Go button
         top_bar = QHBoxLayout()
 
+        url_label = QLabel("URL:")
+        top_bar.addWidget(url_label)
+
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("Enter Archi HTML report URL (e.g., http://server/report/index.html)")
         self.url_input.returnPressed.connect(self._on_go_clicked)
@@ -164,7 +173,7 @@ class ArchiScraperApp(QMainWindow):
         user_agent_bar = QHBoxLayout()
         user_agent_label = QLabel("User-Agent:")
         self.user_agent_input = QLineEdit()
-        self.user_agent_input.setText(DEFAULT_USER_AGENT)
+        self.user_agent_input.setPlaceholderText("Auto — random browser UA per session")
         user_agent_bar.addWidget(user_agent_label)
         user_agent_bar.addWidget(self.user_agent_input)
         browser_layout.addLayout(user_agent_bar)
@@ -207,7 +216,8 @@ class ArchiScraperApp(QMainWindow):
                 background-color: #106ebe;
             }
             QPushButton:disabled {
-                background-color: #cccccc;
+                background-color: #e0e0e0;
+                color: #999999;
             }
         """)
         self.download_button.clicked.connect(self._on_download_clicked)
@@ -228,13 +238,14 @@ class ArchiScraperApp(QMainWindow):
                 background-color: #0e6b0e;
             }
             QPushButton:disabled {
-                background-color: #cccccc;
+                background-color: #e0e0e0;
+                color: #999999;
             }
         """)
         self.add_to_batch_button.clicked.connect(self._on_add_to_batch_clicked)
         bottom_bar.addWidget(self.add_to_batch_button)
 
-        self.single_image_checkbox = QCheckBox("Download view image")
+        self.single_image_checkbox = QCheckBox("Include image (single export)")
         self.single_image_checkbox.setChecked(False)
         bottom_bar.addWidget(self.single_image_checkbox)
 
@@ -284,7 +295,8 @@ class ArchiScraperApp(QMainWindow):
                 background-color: #4a2474;
             }
             QPushButton:disabled {
-                background-color: #cccccc;
+                background-color: #e0e0e0;
+                color: #999999;
             }
         """)
         self.export_batch_button.clicked.connect(self._on_export_batch_clicked)
@@ -296,7 +308,7 @@ class ArchiScraperApp(QMainWindow):
         batch_layout.addWidget(self.include_connections_checkbox)
 
         # Image download toggle (applies to batch exports)
-        self.download_images_checkbox = QCheckBox("Download view images")
+        self.download_images_checkbox = QCheckBox("Include images (batch export)")
         self.download_images_checkbox.setChecked(False)
         batch_layout.addWidget(self.download_images_checkbox)
 
@@ -326,7 +338,8 @@ class ArchiScraperApp(QMainWindow):
                 background-color: #b83000;
             }
             QPushButton:disabled {
-                background-color: #cccccc;
+                background-color: #e0e0e0;
+                color: #999999;
             }
         """)
         self.download_all_button.clicked.connect(self._on_download_all_clicked)
@@ -357,7 +370,7 @@ class ArchiScraperApp(QMainWindow):
     def _get_user_agent(self) -> str:
         """Return the User-Agent string for HTTP requests."""
         user_agent = self.user_agent_input.text().strip()
-        return user_agent or DEFAULT_USER_AGENT
+        return user_agent or get_random_user_agent()
 
     def _get_timeout(self) -> int:
         """Return timeout in seconds for HTTP requests."""
