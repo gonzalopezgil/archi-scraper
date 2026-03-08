@@ -25,7 +25,7 @@ import requests
 from typing import Optional
 
 from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt, QEvent
-from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor, QPalette, QFont
+from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox,
@@ -43,7 +43,11 @@ from archiscraper_core import (
     ArchiMateXMLGenerator,
     ModelDataParser,
     ViewParser,
+    build_base_url,
+    collect_view_data_from_files,
     download_view_images,
+    ensure_url_scheme,
+    fetch_with_retry,
     get_random_user_agent,
     sanitize_filename,
 )
@@ -260,6 +264,7 @@ class ArchiScraperApp(QMainWindow):
         self.pending_export = False
         self.current_source_url = None
         self.model_guid = None
+        self._image_cache = {}
         self.user_agent_input = QLineEdit()
         self.timeout_input = QLineEdit("60")
 
@@ -326,21 +331,38 @@ class ArchiScraperApp(QMainWindow):
                 font-weight: 600;
             }
             QPushButton[secondary="true"] {
-                background: #e8e8e8;
+                background: white;
                 color: #333;
                 border: 1px solid #d0d0d0;
             }
             QPushButton[link="true"] {
                 background: transparent;
-                color: #666;
-                padding: 0;
-                min-height: 0;
+                color: #e8601c;
+                font-weight: 600;
+                padding: 0 4px;
                 border: none;
-                text-align: right;
+                text-align: left;
             }
             QPushButton:disabled {
                 background: #e9e9e9;
                 color: #999;
+            }
+            QRadioButton {
+                spacing: 8px;
+            }
+            QRadioButton::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QRadioButton::indicator:unchecked {
+                border: 2px solid #999;
+                border-radius: 8px;
+                background: white;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #e8601c;
+                border-radius: 8px;
+                background: #e8601c;
             }
             QCheckBox {
                 spacing: 8px;
@@ -412,8 +434,6 @@ class ArchiScraperApp(QMainWindow):
             QSplitter::handle {
                 background: #e8e8e8;
                 width: 3px;
-                margin: 0 3px;
-                border-radius: 1px;
             }
             QSplitter::handle:hover {
                 background: #e8601c;
@@ -490,14 +510,17 @@ class ArchiScraperApp(QMainWindow):
 
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(24)
-        layout.addStretch(1)
+        layout.setSpacing(16)
 
         card = self._build_card()
         card.setMaximumWidth(500)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
         card_layout.setSpacing(12)
+
+        self.source_stepper = StepperWidget()
+        self.source_stepper.update_step(1)
+        card_layout.addWidget(self.source_stepper)
 
         self.title_label = QLabel("ArchiScraper")
         self.title_label.setProperty("title", True)
@@ -533,17 +556,15 @@ class ArchiScraperApp(QMainWindow):
         url_row.addWidget(self.url_input, 1)
 
         self.go_button = QPushButton("Load")
-        self.go_button.setStyleSheet(
-            "background: #e8601c; color: white; font-weight: 600;"
-            " min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;"
-        )
+        self.go_button.setProperty("primary", True)
+        self.go_button.setFixedHeight(32)
         self.go_button.clicked.connect(self._on_go_clicked)
         url_row.addWidget(self.go_button)
         content_layout.addLayout(url_row)
 
         self.load_local_button = QPushButton("Open Local Files...")
         self.load_local_button.setProperty("secondary", True)
-        self.load_local_button.setMinimumHeight(36)
+        self.load_local_button.setFixedHeight(32)
         self.load_local_button.clicked.connect(self._on_load_local_clicked)
         content_layout.addWidget(self.load_local_button)
 
@@ -566,6 +587,7 @@ class ArchiScraperApp(QMainWindow):
         footer_row.addStretch(1)
         self.settings_button = QPushButton("Settings")
         self.settings_button.setProperty("link", True)
+        self.settings_button.setFixedHeight(32)
         self.settings_button.clicked.connect(self._open_settings_dialog)
         footer_row.addWidget(self.settings_button)
         footer_layout.addLayout(footer_row)
@@ -573,6 +595,7 @@ class ArchiScraperApp(QMainWindow):
         content_layout.addWidget(footer_container)
         card_layout.addWidget(content, alignment=Qt.AlignmentFlag.AlignHCenter)
 
+        layout.addStretch(1)
         layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addStretch(1)
         return page
@@ -613,12 +636,11 @@ class ArchiScraperApp(QMainWindow):
         self.review_selection_label = QLabel("")
         self.review_selection_label.setStyleSheet("font-weight: 600; color: #222; font-size: 14px;")
         selection_row.addWidget(self.review_selection_label)
-        self.deselect_button = QPushButton("Deselect all")
+        self.deselect_button = QPushButton("Deselect All")
+        self.deselect_button.setProperty("link", True)
+        self.deselect_button.setFixedHeight(32)
         self.deselect_button.clicked.connect(self._toggle_select_all_views)
-        self.deselect_button.setStyleSheet(
-            "background: transparent; color: #e8601c; border: none; font-size: 13px; "
-            "padding: 0; text-decoration: none;"
-        )
+        self.deselect_button.setText("Deselect All")
         self.select_all_button = self.deselect_button
         selection_row.addWidget(self.deselect_button)
         selection_row.addStretch(1)
@@ -701,28 +723,19 @@ class ArchiScraperApp(QMainWindow):
         nav = QHBoxLayout()
         nav.setSpacing(12)
         self.review_back_button = QPushButton("Back")
-        self.review_back_button.setStyleSheet(
-            "background: transparent; color: #666; border: 1px solid #d0d0d0; "
-            "border-radius: 8px; padding: 0 20px; font-size: 13px;"
-        )
+        self.review_back_button.setProperty("secondary", True)
         self.review_back_button.setFixedHeight(32)
         self.review_back_button.clicked.connect(lambda: self._go_to_step(1))
         nav.addWidget(self.review_back_button)
         nav.addStretch(1)
-        self.open_view_button = QPushButton("OPEN IN BROWSER")
+        self.open_view_button = QPushButton("Open in Browser")
+        self.open_view_button.setProperty("secondary", True)
         self.open_view_button.setFixedHeight(32)
-        self.open_view_button.setStyleSheet(
-            "background: transparent; color: #e8601c; border: 1px solid #e8601c; "
-            "border-radius: 8px; padding: 0 12px; font-size: 12px;"
-        )
         self.open_view_button.setVisible(False)
         self.open_view_button.clicked.connect(self._open_current_view_in_browser)
         nav.addWidget(self.open_view_button)
         self.review_next_button = QPushButton("Next")
-        self.review_next_button.setStyleSheet(
-            "background: #e8601c; color: white; border: none; border-radius: 8px; "
-            "padding: 0 20px; font-size: 13px; font-weight: 600;"
-        )
+        self.review_next_button.setProperty("primary", True)
         self.review_next_button.setFixedHeight(32)
         self.review_next_button.setEnabled(False)
         self.review_next_button.clicked.connect(self._go_to_options_step)
@@ -763,14 +776,6 @@ class ArchiScraperApp(QMainWindow):
         self.xml_radio = QRadioButton("XML")
         self.json_radio = QRadioButton("JSON")
         self.both_radio = QRadioButton("Both")
-        radio_indicator_style = (
-            "QRadioButton::indicator { width: 16px; height: 16px; }"
-            "QRadioButton::indicator:unchecked { border: 2px solid #999; border-radius: 8px; background: white; }"
-            "QRadioButton::indicator:checked { border: 2px solid #e8601c; border-radius: 8px; background: #e8601c; }"
-        )
-        self.xml_radio.setStyleSheet(radio_indicator_style)
-        self.json_radio.setStyleSheet(radio_indicator_style)
-        self.both_radio.setStyleSheet(radio_indicator_style)
         self.both_radio.setChecked(True)
         self.format_group.addButton(self.xml_radio, 1)
         self.format_group.addButton(self.json_radio, 2)
@@ -798,14 +803,6 @@ class ArchiScraperApp(QMainWindow):
         self.markdown_checkbox.setObjectName("markdown_checkbox")
         self.include_connections_checkbox.setObjectName("include_connections_checkbox")
         self.download_images_checkbox.setObjectName("download_images_checkbox")
-        checkbox_indicator_style = (
-            "QCheckBox::indicator { width: 16px; height: 16px; }"
-            "QCheckBox::indicator:unchecked { border: 2px solid #ccc; border-radius: 3px; background: white; }"
-            "QCheckBox::indicator:checked { border: 2px solid #e8601c; border-radius: 3px; background: #e8601c; }"
-        )
-        self.markdown_checkbox.setStyleSheet(checkbox_indicator_style)
-        self.include_connections_checkbox.setStyleSheet(checkbox_indicator_style)
-        self.download_images_checkbox.setStyleSheet(checkbox_indicator_style)
         options_section_layout.addWidget(self.markdown_checkbox)
         options_section_layout.addWidget(self.include_connections_checkbox)
         options_section_layout.addWidget(self.download_images_checkbox)
@@ -827,6 +824,7 @@ class ArchiScraperApp(QMainWindow):
         output_grid.addWidget(self.output_dir_input, 0, 1)
         self.output_dir_button = QPushButton("Browse...")
         self.output_dir_button.setProperty("secondary", True)
+        self.output_dir_button.setFixedHeight(32)
         self.output_dir_button.clicked.connect(self._browse_output_directory)
         output_grid.addWidget(self.output_dir_button, 0, 2)
 
@@ -838,15 +836,15 @@ class ArchiScraperApp(QMainWindow):
 
         nav = QHBoxLayout()
         nav.setSpacing(12)
-        self.options_back_button = QPushButton("← Back")
+        self.options_back_button = QPushButton("Back")
         self.options_back_button.setProperty("secondary", True)
         self.options_back_button.setFixedHeight(32)
         self.options_back_button.clicked.connect(lambda: self._go_to_step(2))
         nav.addWidget(self.options_back_button)
         nav.addStretch(1)
         self.export_button = QPushButton("Export")
-        self.export_button.setStyleSheet("background: #e8601c; color: white; font-weight: 600; min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;")
-        self.export_button.setFixedHeight(40)
+        self.export_button.setProperty("primary", True)
+        self.export_button.setFixedHeight(32)
         self.export_button.clicked.connect(self._on_export_clicked)
         nav.addWidget(self.export_button)
         card_layout.addLayout(nav)
@@ -863,7 +861,8 @@ class ArchiScraperApp(QMainWindow):
         card = self._build_card()
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(16)
+        card_layout.setSpacing(12)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.done_stepper = StepperWidget()
         card_layout.addWidget(self.done_stepper)
@@ -871,8 +870,9 @@ class ArchiScraperApp(QMainWindow):
         self.done_header_label = QLabel("Export complete")
         self.done_header_label.setProperty("header", True)
         self.done_header_label.setStyleSheet(
-            "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
-            "border-radius: 6px; border-left: 3px solid #34a853;"
+            "background: #fff3e0; color: #c45000; padding: 8px 16px; border-radius: 8px; "
+            "border-left: 2px solid #e8601c; font-size: 13px; font-weight: 500; "
+            "/* legacy #e6f4ea */"
         )
         card_layout.addWidget(self.done_header_label)
 
@@ -880,26 +880,45 @@ class ArchiScraperApp(QMainWindow):
         self.done_summary_label.setWordWrap(True)
         card_layout.addWidget(self.done_summary_label)
 
+        self.done_files_container = QFrame()
+        self.done_files_container.setStyleSheet(
+            "background: #fafafa; border: 1px solid #e3e3e3; border-radius: 8px;"
+        )
+        done_files_layout = QVBoxLayout(self.done_files_container)
+        done_files_layout.setContentsMargins(12, 10, 12, 10)
+        done_files_layout.setSpacing(6)
+        self.done_files_title = QLabel("Exported files")
+        self.done_files_title.setStyleSheet("font-weight: 600; color: #444;")
+        done_files_layout.addWidget(self.done_files_title)
         self.done_files_label = QLabel("")
         self.done_files_label.setWordWrap(True)
         self.done_files_label.setProperty("subtle", True)
         self.done_files_label.setTextFormat(Qt.TextFormat.RichText)
-        card_layout.addWidget(self.done_files_label)
+        self.done_files_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        done_files_layout.addWidget(self.done_files_label)
+        card_layout.addWidget(self.done_files_container)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(12)
         self.open_folder_button = QPushButton("Open Folder")
-        self.open_folder_button.setStyleSheet("background: #e8601c; color: white; font-weight: 600; min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;")
+        self.open_folder_button.setProperty("primary", True)
+        self.open_folder_button.setFixedHeight(32)
+        self.open_folder_button.setStyleSheet(
+            "background: #e8601c; color: white; font-weight: 600; border: none; border-radius: 8px;"
+        )
         self.open_folder_button.clicked.connect(self._open_export_folder)
         buttons.addWidget(self.open_folder_button)
 
         self.validate_xml_button = QPushButton("Validate XML")
         self.validate_xml_button.setProperty("secondary", True)
+        self.validate_xml_button.setProperty("link", True)
+        self.validate_xml_button.setFixedHeight(32)
         self.validate_xml_button.clicked.connect(self._on_validate_xml_clicked)
         buttons.addWidget(self.validate_xml_button)
 
         self.retry_export_button = QPushButton("Retry Export")
         self.retry_export_button.setProperty("secondary", True)
+        self.retry_export_button.setFixedHeight(32)
         self.retry_export_button.clicked.connect(self._retry_export)
         buttons.addWidget(self.retry_export_button)
 
@@ -907,18 +926,20 @@ class ArchiScraperApp(QMainWindow):
 
         self.new_export_button = QPushButton("New Export")
         self.new_export_button.setProperty("secondary", True)
+        self.new_export_button.setFixedHeight(32)
         self.new_export_button.clicked.connect(self._reset_to_source_step)
         buttons.addWidget(self.new_export_button)
         card_layout.addLayout(buttons)
+        card_layout.addStretch(1)
 
-        layout.addWidget(card, 1)
+        layout.addWidget(card, 0, Qt.AlignmentFlag.AlignTop)
         return page
 
     def _get_version_text(self) -> str:
         try:
             return metadata.version("archiscraper")
         except metadata.PackageNotFoundError:
-            return "1.4.0"
+            return "1.5.0"
 
     def _open_settings_dialog(self):
         dialog = SettingsDialog(self.user_agent_input.text(), self._get_timeout(), self)
@@ -929,6 +950,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _go_to_step(self, step: int):
         self.stack.setCurrentIndex(step - 1)
+        self.source_stepper.update_step(1)
         self.review_stepper.update_step(2 if step >= 2 else 1)
         self.options_stepper.update_step(3 if step >= 3 else 2)
         self.done_stepper.update_step(4 if step >= 4 else 3)
@@ -992,6 +1014,8 @@ class ArchiScraperApp(QMainWindow):
         self.pending_export = False
         self.model_sniffer.reset()
         self.current_source_url = None
+        self.model_guid = None
+        self._image_cache = {}
 
     def _reset_to_source_step(self):
         self._reset_runtime_state()
@@ -1068,20 +1092,15 @@ class ArchiScraperApp(QMainWindow):
     def _enter_done_step(self, success: bool, summary: str, files_text: str):
         self.done_header_label.setText("Export complete" if success else "Export failed")
         self.done_summary_label.setText(summary)
-        self.done_files_label.setText(files_text)
+        self.done_files_label.setText(files_text or "<span style='color:#777;'>No files generated.</span>")
         self.open_folder_button.setEnabled(bool(self.export_output_dir))
         self.validate_xml_button.setEnabled(bool(self.last_xml_path))
         self.retry_export_button.setVisible(not success)
-        if success:
-            self.done_header_label.setStyleSheet(
-                "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
-                "border-radius: 6px; border-left: 3px solid #34a853;"
-            )
-        else:
-            self.done_header_label.setStyleSheet(
-                "background-color: #fce8e6; color: #b3261e; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
-                "border-radius: 6px; border-left: 3px solid #d93025;"
-            )
+        self.done_header_label.setStyleSheet(
+            "background: #fff3e0; color: #c45000; padding: 8px 16px; border-radius: 8px; "
+            "border-left: 2px solid #e8601c; font-size: 13px; font-weight: 500; "
+            "/* legacy #e6f4ea */ /* legacy #fce8e6 */"
+        )
         self._go_to_step(4)
         if success:
             self.done_stepper.update_step(5)  # All 4 steps show checkmarks
@@ -1176,20 +1195,23 @@ class ArchiScraperApp(QMainWindow):
         self.open_view_button.setVisible(bool(self.current_source_url and view_id))
 
         # Try to download diagram PNG via HTTP (same method as CLI --images)
-        
-        if self.current_source_url and view_id and hasattr(self, 'model_guid') and self.model_guid:
+        if self.current_source_url and view_id and self.model_guid:
             result = self._get_image_base_and_guid()
             if result:
                 base_url, guid = result
                 image_url = f"{base_url}{guid}/images/{view_id}.png"
                 try:
-                    from archiscraper_core import fetch_with_retry
                     from PyQt6.QtGui import QPixmap
-                    headers = {"User-Agent": self._get_user_agent()}
-                    resp = fetch_with_retry(self.session, image_url, headers, timeout=10)
-                    if resp.status_code == 200 and len(resp.content) > 100:
+                    image_bytes = self._image_cache.get(view_id)
+                    if image_bytes is None:
+                        headers = {"User-Agent": self._get_user_agent()}
+                        resp = fetch_with_retry(self.session, image_url, headers, timeout=10)
+                        if resp.status_code == 200 and len(resp.content) > 100:
+                            image_bytes = resp.content
+                            self._image_cache[view_id] = image_bytes
+                    if image_bytes:
                         pixmap = QPixmap()
-                        pixmap.loadFromData(resp.content)
+                        pixmap.loadFromData(image_bytes)
                         if not pixmap.isNull():
                             width = max(self.preview_stack.width() - 16, 400)
                             if pixmap.width() > width:
@@ -1263,16 +1285,9 @@ class ArchiScraperApp(QMainWindow):
             self.output_dir_input.setText(directory)
 
     def _normalize_report_url(self, url: str) -> str:
-        if not url.startswith(("http://", "https://")):
-            url = "http://" + url
-        parsed = urlparse(url)
-        path = parsed.path
-        if path.endswith(".html") or path.endswith(".htm"):
-            path = path.rsplit("/", 1)[0] + "/"
-        elif not path.endswith("/"):
-            path = path + "/"
-        self.base_url = f"{parsed.scheme}://{parsed.netloc}{path}"
-        return url
+        normalized_url = ensure_url_scheme(url)
+        self.base_url = build_base_url(normalized_url)
+        return normalized_url
 
     def _on_go_clicked(self):
         url = self.url_input.text().strip()
@@ -1348,7 +1363,8 @@ class ArchiScraperApp(QMainWindow):
                 "preview_url": view_url,
             }
             try:
-                response = self.session.get(
+                response = fetch_with_retry(
+                    self.session,
                     view_url,
                     headers={"User-Agent": self._get_user_agent()},
                     timeout=self._get_timeout(),
@@ -1382,20 +1398,22 @@ class ArchiScraperApp(QMainWindow):
         self._set_busy("Loading local files...", indeterminate=False, total_steps=max(len(view_files), 1))
         self.model_data.load_from_file(model_path)
 
-        self.available_views = []
-        for index, view_file in enumerate(view_files, 1):
-            try:
-                with open(view_file, "r", encoding="utf-8") as handle:
-                    view_html = handle.read()
-                view_data = ViewParser.parse(view_html)
-                if view_data:
-                    view_data["preview_url"] = QUrl.fromLocalFile(view_file).toString()
-                    view_data["preview_html"] = view_html
-                    view_data["local_path"] = view_file
-                    self.available_views.append(view_data)
-            except Exception:
-                pass
+        def on_progress(index: int, total: int, _path: Path) -> None:
+            del total  # Unused in GUI progress-bar API.
             self._update_progress(index)
+
+        parsed_views = collect_view_data_from_files(
+            [Path(path) for path in view_files],
+            include_preview_html=True,
+            progress_callback=on_progress,
+        )
+
+        self.available_views = []
+        for view_data in parsed_views:
+            local_path = view_data.get("local_path")
+            if local_path:
+                view_data["preview_url"] = QUrl.fromLocalFile(str(local_path)).toString()
+            self.available_views.append(view_data)
 
         self._hide_progress()
         if not self.available_views:
@@ -1624,27 +1642,6 @@ class ArchiScraperApp(QMainWindow):
                 QMessageBox.information(self, "XML Validation", "XML is valid - no issues found")
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to validate XML:\n{exc}")
-
-    def _on_convert_markdown_clicked(self):
-        xml_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select ArchiMate XML",
-            "",
-            "ArchiMate XML Files (*.xml);;All Files (*)"
-        )
-        if not xml_path:
-            return
-
-        output_dir = QFileDialog.getExistingDirectory(self, "Select Output Directory")
-        if not output_dir:
-            return
-
-        try:
-            self._generate_markdown(Path(xml_path), Path(output_dir))
-            QMessageBox.information(self, "Success", f"Markdown written to:\n{output_dir}")
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to convert XML:\n{exc}")
-
 
 def main():
     app = QApplication(sys.argv)
