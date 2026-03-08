@@ -224,7 +224,8 @@ class ArchiScraperApp(QMainWindow):
 
         self.model_sniffer = ModelUrlSniffer(self)
         self.model_sniffer.model_url_found.connect(self._on_model_url_found)
-        self.hidden_web_view = QWebEngineView()
+        self.hidden_web_view = QWebEngineView(self)
+        self.hidden_web_view.setFixedSize(0, 0)
         self.hidden_web_view.setUrl(QUrl("about:blank"))
         self.hidden_web_view.page().profile().setUrlRequestInterceptor(self.model_sniffer)
 
