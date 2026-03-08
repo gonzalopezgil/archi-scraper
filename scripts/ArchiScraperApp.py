@@ -126,7 +126,7 @@ class StepperWidget(QWidget):
             else:
                 dot.setText(str(index))
                 dot.setStyleSheet(
-                    "background: #ededed; color: #777; border: 1px solid #d0d0d0; "
+                    "background: #ededed; background: #fff; color: #666; border: 2px solid #999; "
                     "border-radius: 14px; font-weight: 600;"
                 )
 
@@ -140,8 +140,8 @@ class ReviewListItemWidget(QWidget):
         super().__init__(parent)
         tooltip = f"{name} - {count} elements"
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
         self.checkbox = QCheckBox()
         layout.addWidget(self.checkbox)
@@ -343,7 +343,7 @@ class ArchiScraperApp(QMainWindow):
                 color: #999;
             }
             QCheckBox {
-                spacing: 6px;
+                spacing: 8px;
             }
             QCheckBox::indicator {
                 width: 16px;
@@ -363,49 +363,60 @@ class ArchiScraperApp(QMainWindow):
             QCheckBox::indicator:unchecked:hover {
                 border-color: #e8601c;
             }
-            QLineEdit, QListWidget {
+            QLineEdit {
                 background: white;
                 border: 1px solid #d7d7d7;
                 border-radius: 8px;
-                padding: 8px 10px;
+                min-height: 32px;
+                padding: 0 8px;
+            }
+            QListWidget {
+                background: white;
+                border: 1px solid #d7d7d7;
+                border-radius: 8px;
+                padding: 8px;
             }
             QListWidget::item:selected {
                 background: #fff3e0;
                 color: #222;
                 border-left: 3px solid #e8601c;
-                padding-left: 4px;
+                padding-left: 8px;
             }
             QListWidget::item:hover:!selected {
                 background: #fafafa;
             }
             QScrollBar:vertical {
-                background: transparent;
                 width: 8px;
-                margin: 0;
-                border: none;
+                background: transparent;
             }
             QScrollBar::handle:vertical {
-                background: rgba(0, 0, 0, 0.2);
+                background: rgba(0,0,0,0.15);
                 border-radius: 4px;
                 min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: rgba(0, 0, 0, 0.35);
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0;
             }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+            QScrollBar:horizontal {
+                height: 8px;
                 background: transparent;
             }
-            QScrollBar:horizontal {
-                height: 0;
+            QScrollBar::handle:horizontal {
+                background: rgba(0,0,0,0.15);
+                border-radius: 4px;
+                min-width: 30px;
+            }
+            QScrollBar::add-page, QScrollBar::sub-page {
+                background: transparent;
             }
             QSplitter::handle {
-                background: #e0e0e0;
+                background: #e8e8e8;
+                width: 3px;
+                margin: 0 3px;
+                border-radius: 1px;
             }
-            QSplitter::handle:horizontal {
-                width: 1px;
+            QSplitter::handle:hover {
+                background: #e8601c;
             }
             QProgressBar {
                 background: #ededed;
@@ -485,7 +496,7 @@ class ArchiScraperApp(QMainWindow):
         card = self._build_card()
         card.setMaximumWidth(500)
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setContentsMargins(16, 16, 16, 16)
         card_layout.setSpacing(12)
 
         self.title_label = QLabel("ArchiScraper")
@@ -584,12 +595,12 @@ class ArchiScraperApp(QMainWindow):
         self.review_header_label = QLabel("Model loaded successfully")
         self.review_header_label.setProperty("header", True)
         self.review_header_label.setStyleSheet(
-            "background: #fff3e0; color: #c45000; padding: 6px 12px; border-radius: 8px; "
+            "background: #fff3e0; color: #c45000; padding: 8px 16px; border-radius: 8px; "
             "border-left: 2px solid #e8601c; font-size: 13px; font-weight: 500;"
             " /* legacy #e6f4ea */"
         )
         card_layout.addWidget(self.review_header_label)
-        card_layout.addSpacing(16)
+        card_layout.addSpacing(8)
 
         self.review_stats_label = QLabel("")
         self.review_stats_label.setProperty("subtle", True)
@@ -616,7 +627,7 @@ class ArchiScraperApp(QMainWindow):
 
         self.review_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.review_splitter.setChildrenCollapsible(False)
-        self.review_splitter.setHandleWidth(1)
+        self.review_splitter.setHandleWidth(10)
 
         left_panel = QFrame()
         left_panel.setStyleSheet("QFrame { border: none; background: transparent; }")
@@ -630,6 +641,8 @@ class ArchiScraperApp(QMainWindow):
         self.review_filter_input = QLineEdit()
         self.review_filter_input.setPlaceholderText("Filter views...")
         self.review_filter_input.setClearButtonEnabled(True)
+        self.review_filter_input.setFixedHeight(32)
+        self.review_filter_input.setStyleSheet("border-radius: 8px;")
         self.review_filter_input.textChanged.connect(self._filter_review_list)
         filter_layout.addWidget(self.review_filter_input, 1)
         left_panel_layout.addWidget(filter_container)
@@ -680,17 +693,6 @@ class ArchiScraperApp(QMainWindow):
         self.preview_stack.addWidget(self.review_preview)
         preview_layout.addWidget(self.preview_stack)
 
-        # Open in Browser button
-        self.open_view_button = QPushButton("Open in Browser")
-        self.open_view_button.setFixedHeight(32)
-        self.open_view_button.setStyleSheet(
-            "background: transparent; color: #e8601c; border: 1px solid #e8601c; "
-            "border-radius: 8px; padding: 0 12px; font-size: 12px;"
-        )
-        self.open_view_button.setVisible(False)
-        self.open_view_button.clicked.connect(self._open_current_view_in_browser)
-        preview_layout.addWidget(self.open_view_button, alignment=Qt.AlignmentFlag.AlignRight)
-
         self.review_splitter.addWidget(self.preview_container)
         self.review_splitter.setStretchFactor(0, 1)
         self.review_splitter.setStretchFactor(1, 1)
@@ -707,6 +709,15 @@ class ArchiScraperApp(QMainWindow):
         self.review_back_button.clicked.connect(lambda: self._go_to_step(1))
         nav.addWidget(self.review_back_button)
         nav.addStretch(1)
+        self.open_view_button = QPushButton("OPEN IN BROWSER")
+        self.open_view_button.setFixedHeight(32)
+        self.open_view_button.setStyleSheet(
+            "background: transparent; color: #e8601c; border: 1px solid #e8601c; "
+            "border-radius: 8px; padding: 0 12px; font-size: 12px;"
+        )
+        self.open_view_button.setVisible(False)
+        self.open_view_button.clicked.connect(self._open_current_view_in_browser)
+        nav.addWidget(self.open_view_button)
         self.review_next_button = QPushButton("Next")
         self.review_next_button.setStyleSheet(
             "background: #e8601c; color: white; border: none; border-radius: 8px; "
@@ -829,7 +840,7 @@ class ArchiScraperApp(QMainWindow):
         nav.setSpacing(12)
         self.options_back_button = QPushButton("← Back")
         self.options_back_button.setProperty("secondary", True)
-        self.options_back_button.setFixedHeight(40)
+        self.options_back_button.setFixedHeight(32)
         self.options_back_button.clicked.connect(lambda: self._go_to_step(2))
         nav.addWidget(self.options_back_button)
         nav.addStretch(1)
@@ -860,7 +871,7 @@ class ArchiScraperApp(QMainWindow):
         self.done_header_label = QLabel("Export complete")
         self.done_header_label.setProperty("header", True)
         self.done_header_label.setStyleSheet(
-            "background-color: #e6f4ea; color: #1e6b3a; padding: 4px 8px; font-size: 14px; line-height: 1.2; "
+            "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
             "border-radius: 6px; border-left: 3px solid #34a853;"
         )
         card_layout.addWidget(self.done_header_label)
@@ -1063,12 +1074,12 @@ class ArchiScraperApp(QMainWindow):
         self.retry_export_button.setVisible(not success)
         if success:
             self.done_header_label.setStyleSheet(
-                "background-color: #e6f4ea; color: #1e6b3a; padding: 4px 8px; font-size: 14px; line-height: 1.2; "
+                "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
                 "border-radius: 6px; border-left: 3px solid #34a853;"
             )
         else:
             self.done_header_label.setStyleSheet(
-                "background-color: #fce8e6; color: #b3261e; padding: 4px 8px; font-size: 14px; line-height: 1.2; "
+                "background-color: #fce8e6; color: #b3261e; padding: 8px 16px; font-size: 14px; line-height: 1.2; "
                 "border-radius: 6px; border-left: 3px solid #d93025;"
             )
         self._go_to_step(4)
