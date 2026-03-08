@@ -21,7 +21,7 @@ import requests
 from typing import Optional
 
 from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QIntValidator
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
@@ -115,6 +115,7 @@ class ArchiScraperApp(QMainWindow):
         self.model_data = ModelDataParser()
         self.base_url = None
         self.model_url = None  # Store the captured model.html URL
+        self.session = requests.Session()
         
         # Network interceptor to capture model.html URL automatically
         self.model_sniffer = ModelUrlSniffer(self)
@@ -167,6 +168,17 @@ class ArchiScraperApp(QMainWindow):
         user_agent_bar.addWidget(user_agent_label)
         user_agent_bar.addWidget(self.user_agent_input)
         browser_layout.addLayout(user_agent_bar)
+
+        timeout_bar = QHBoxLayout()
+        timeout_label = QLabel("Timeout (s):")
+        self.timeout_input = QLineEdit()
+        self.timeout_input.setValidator(QIntValidator(1, 600, self))
+        self.timeout_input.setText("60")
+        self.timeout_input.setFixedWidth(80)
+        timeout_bar.addWidget(timeout_label)
+        timeout_bar.addWidget(self.timeout_input)
+        timeout_bar.addStretch(1)
+        browser_layout.addLayout(timeout_bar)
         
         # Web view with network interceptor
         self.web_view = QWebEngineView()
@@ -347,6 +359,17 @@ class ArchiScraperApp(QMainWindow):
         user_agent = self.user_agent_input.text().strip()
         return user_agent or DEFAULT_USER_AGENT
 
+    def _get_timeout(self) -> int:
+        """Return timeout in seconds for HTTP requests."""
+        raw_value = self.timeout_input.text().strip()
+        try:
+            timeout = int(raw_value)
+            if timeout > 0:
+                return timeout
+        except ValueError:
+            pass
+        return 60
+
     def _get_views_base_url(self) -> Optional[str]:
         """Derive the views base URL from the captured model.html URL."""
         if not self.model_url:
@@ -396,10 +419,10 @@ class ArchiScraperApp(QMainWindow):
 
             view_url = f"{views_base_url}{view_id}.html"
             try:
-                response = requests.get(
+                response = self.session.get(
                     view_url,
                     headers={"User-Agent": self._get_user_agent()},
-                    timeout=30,
+                    timeout=self._get_timeout(),
                 )
                 response.raise_for_status()
                 view_html = response.text
@@ -481,7 +504,12 @@ class ArchiScraperApp(QMainWindow):
         self.model_url = model_url  # Store for Download All Views feature
         self.status_bar.showMessage(f"Fetching model data from: {model_url}...")
 
-        if self.model_data.load_from_url(model_url, headers={"User-Agent": self._get_user_agent()}):
+        if self.model_data.load_from_url(
+            model_url,
+            headers={"User-Agent": self._get_user_agent()},
+            timeout=self._get_timeout(),
+            session=self.session,
+        ):
             elem_count = len(self.model_data.elements)
             folder_count = len(self.model_data.folders)
             view_count = len(self.model_data.views)
@@ -545,10 +573,10 @@ class ArchiScraperApp(QMainWindow):
         
         try:
             # Download the view HTML
-            response = requests.get(
+            response = self.session.get(
                 iframe_src,
                 headers={"User-Agent": self._get_user_agent()},
-                timeout=30,
+                timeout=self._get_timeout(),
             )
             response.raise_for_status()
             view_html = response.text
@@ -607,6 +635,8 @@ class ArchiScraperApp(QMainWindow):
                             views=[view_data],
                             output_dir=str(images_dir),
                             user_agent=self._get_user_agent(),
+                            timeout=self._get_timeout(),
+                            session=self.session,
                         )
 
                 # Count docs added
@@ -674,10 +704,10 @@ class ArchiScraperApp(QMainWindow):
         
         try:
             # Download the view HTML
-            response = requests.get(
+            response = self.session.get(
                 iframe_src,
                 headers={"User-Agent": self._get_user_agent()},
-                timeout=30,
+                timeout=self._get_timeout(),
             )
             response.raise_for_status()
             view_html = response.text
@@ -809,6 +839,8 @@ class ArchiScraperApp(QMainWindow):
                             views=self.batch_views,
                             output_dir=str(images_dir),
                             user_agent=self._get_user_agent(),
+                            timeout=self._get_timeout(),
+                            session=self.session,
                         )
                         self.status_bar.showMessage(
                             f"✓ Downloaded {downloaded_images} images (skipped {skipped_images})."
