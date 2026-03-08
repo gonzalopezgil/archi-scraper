@@ -1035,9 +1035,11 @@ class ArchiScraperApp(QMainWindow):
         element_count = len(self.model_data.elements)
         relationship_count = len(getattr(self.model_data, "relationships", {}))
         view_count = len(self.available_views)
-        self.review_stats_label.setText(
-            f"{element_count} elements • {relationship_count} relationships • {view_count} views"
-        )
+        parts = [f"{element_count} elements"]
+        if relationship_count > 0:
+            parts.append(f"{relationship_count} relationships")
+        parts.append(f"{view_count} views")
+        self.review_stats_label.setText(" • ".join(parts))
 
     def _enter_review_step(self):
         self.selected_view_ids = {view["view_id"] for view in self.available_views}
@@ -1225,7 +1227,7 @@ class ArchiScraperApp(QMainWindow):
         <body style='margin:16px; font-family: -apple-system, sans-serif; color: #222; font-size: 14px;'>
             <h2 style='margin:0 0 8px 0; font-size: 20px; font-family: -apple-system, sans-serif; color: #222;'>{name}</h2>
             {view_id_line}
-            <p style='color:#666;margin:0 0 16px 0; font-size: 12px; font-family: -apple-system, sans-serif;'>{len(elements)} elements, {len(relationships)} relationships</p>
+            <p style='color:#666;margin:0 0 16px 0; font-size: 12px; font-family: -apple-system, sans-serif;'>{len(elements)} elements{f", {len(relationships)} relationships" if relationships else ""}</p>
             {content}
         </body></html>"""
 
