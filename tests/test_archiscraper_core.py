@@ -43,15 +43,15 @@ class TestViewParser(unittest.TestCase):
               <table>
                 <tr>
                   <td><a href="id-abc123.html">App</a></td>
-                  <td><a class="i18n-elementtype-ApplicationComponent">App</a></td>
+                  <td><span class="i18n-elementtype-ApplicationComponent">App</span></td>
                 </tr>
               </table>
             </div>
             <div id="relationships">
               <table>
                 <tr>
-                  <td><a href="id-rel111.html">RelName</a></td>
-                  <td><a class="i18n-relationshiptype-AssignmentRelationship"></a></td>
+                  <td><a href="id-abcd111.html">RelName</a></td>
+                  <td class="i18n-relationshiptype-AssignmentRelationship">Assignment</td>
                   <td><a href="id-abc123.html">Source</a></td>
                   <td><a href="id-def456.html">Target</a></td>
                 </tr>
@@ -69,9 +69,11 @@ class TestViewParser(unittest.TestCase):
         relationships = ViewParser.extract_relationships(
             BeautifulSoup(html, "html.parser")
         )
-        # Verify extract_relationships returns a list (no assertion on count/content
-        # as HTML structure varies; full integration tests cover relationship extraction)
-        self.assertIsInstance(relationships, list)
+        self.assertEqual(len(relationships), 1)
+        self.assertEqual(relationships[0]["id"], "id-abcd111")
+        self.assertEqual(relationships[0]["type"], "Assignment")
+        self.assertEqual(relationships[0]["source"], "id-abc123")
+        self.assertEqual(relationships[0]["target"], "id-def456")
 
     def test_view_parsing(self) -> None:
         html = self._sample_view_html()
@@ -81,6 +83,7 @@ class TestViewParser(unittest.TestCase):
         self.assertEqual(view_data["view_name"], "View One")
         self.assertEqual(view_data["view_id"], "id-view123")
         self.assertIn("id-abc123", view_data["elements"])
+        self.assertEqual(view_data["elements"]["id-abc123"]["type"], "ApplicationComponent")
         coords = view_data["coordinates"]["id-abc123"]
         self.assertEqual(coords["w"], 100)
         self.assertEqual(coords["h"], 200)

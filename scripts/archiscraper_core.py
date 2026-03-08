@@ -360,6 +360,18 @@ class ViewParser:
     """Parses a single view HTML file."""
 
     @staticmethod
+    def _extract_type_from_cell(cell: BeautifulSoup, prefix: str) -> Optional[str]:
+        """Extract i18n-* type from a table cell's class or child elements."""
+        candidates = [cell]
+        candidates.extend(cell.find_all(True))
+        for candidate in candidates:
+            classes = candidate.get('class', [])
+            for cls in classes:
+                if cls.startswith(prefix):
+                    return cls.replace(prefix, '')
+        return None
+
+    @staticmethod
     def extract_elements(soup: BeautifulSoup) -> Dict[str, Dict[str, str]]:
         """Parse the #elements table to get element IDs, names, and types."""
         elements: Dict[str, Dict[str, str]] = {}
@@ -377,7 +389,6 @@ class ViewParser:
             cells = row.find_all('td')
             if len(cells) >= 2:
                 name_link = cells[0].find('a')
-                type_link = cells[1].find('a')
 
                 if name_link:
                     href = name_link.get('href', '')
@@ -385,12 +396,9 @@ class ViewParser:
                     elem_id = extract_id_from_href(href)
 
                     elem_type = 'Unknown'
-                    if type_link:
-                        classes = type_link.get('class', [])
-                        for cls in classes:
-                            if cls.startswith('i18n-elementtype-'):
-                                elem_type = cls.replace('i18n-elementtype-', '')
-                                break
+                    raw_type = ViewParser._extract_type_from_cell(cells[1], 'i18n-elementtype-')
+                    if raw_type:
+                        elem_type = raw_type
 
                     if elem_id and name:
                         elements[elem_id] = {
@@ -462,27 +470,18 @@ class ViewParser:
             cells = row.find_all('td')
             if len(cells) >= 4:
                 rel_link = cells[0].find('a')
-                type_link = cells[1].find('a')
                 source_link = cells[2].find('a')
                 target_link = cells[3].find('a')
 
-                if rel_link and type_link and source_link and target_link:
+                if rel_link and source_link and target_link:
                     rel_id = extract_id_from_href(rel_link.get('href', ''))
                     source_id = extract_id_from_href(source_link.get('href', ''))
                     target_id = extract_id_from_href(target_link.get('href', ''))
 
                     rel_type = 'Association'
-                    classes = type_link.get('class', [])
-                    raw_type = None
-                    for cls in classes:
-                        if cls.startswith('i18n-relationshiptype-'):
-                            raw_type = cls.replace('i18n-relationshiptype-', '')
-                            break
+                    raw_type = ViewParser._extract_type_from_cell(cells[1], 'i18n-relationshiptype-')
                     if raw_type is None:
-                        for cls in classes:
-                            if cls.startswith('i18n-elementtype-'):
-                                raw_type = cls.replace('i18n-elementtype-', '')
-                                break
+                        raw_type = ViewParser._extract_type_from_cell(cells[1], 'i18n-elementtype-')
                     if raw_type:
                         rel_type = fix_relationship_type(raw_type)
 
