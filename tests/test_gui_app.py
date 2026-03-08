@@ -4,15 +4,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from PyQt6.QtWidgets import QApplication, QWidget
+try:
+    from PyQt6.QtWidgets import QApplication, QWidget
+    HAS_PYQT6 = True
+except ImportError:
+    HAS_PYQT6 = False
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-import ArchiScraperApp as module
+if HAS_PYQT6:
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import ArchiScraperApp as module
 
 
 class DummyProfile:
@@ -43,6 +47,7 @@ class DummyWebEngineView(QWidget):
         return self._page
 
 
+@unittest.skipUnless(HAS_PYQT6, "PyQt6 not installed")
 class TestGuiButtons(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
