@@ -7,6 +7,7 @@ Outputs a structured Markdown directory for LLM-friendly navigation.
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
@@ -14,6 +15,7 @@ from typing import Dict, List, Tuple
 
 ARCHIMATE_NS = "http://www.opengroup.org/xsd/archimate/3.0/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+logger = logging.getLogger(__name__)
 
 LAYER_FILES = {
     "strategy": "strategy.md",
@@ -271,6 +273,7 @@ def write_views(views: List[Dict[str, object]], elements: Dict[str, Dict[str, st
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
     parser = argparse.ArgumentParser(description="Convert ArchiMate XML to structured Markdown.")
     parser.add_argument("--input", required=True, help="Path to ArchiMate XML input")
     parser.add_argument("--output-dir", required=True, help="Directory to write Markdown files")
@@ -284,7 +287,7 @@ def main() -> None:
     try:
         model_name, elements, relationships, views = parse_model(xml_path)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
-        print(f"Error: {exc}")
+        logger.error("Error: %s", exc)
         sys.exit(1)
     rel_index = build_relationship_index(elements, relationships)
 
