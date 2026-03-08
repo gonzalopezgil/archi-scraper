@@ -16,11 +16,13 @@ from urllib.parse import urlparse
 
 import requests
 
+import archiscraper_to_markdown
 from archiscraper_core import (
     ArchiMateXMLGenerator,
     ModelDataParser,
     ViewParser,
     download_view_images,
+    fetch_with_retry,
     get_random_user_agent,
 )
 
@@ -55,10 +57,7 @@ def discover_model_url(
     session: Optional[requests.Session] = None,
 ) -> Tuple[str, str, str]:
     """Download index.html and discover the model.html URL using the GUID pattern."""
-    if session is None:
-        response = requests.get(index_url, headers=headers, timeout=timeout)
-    else:
-        response = session.get(index_url, headers=headers, timeout=timeout)
+    response = fetch_with_retry(session, index_url, headers, timeout)
     response.raise_for_status()
 
     match = re.search(r'(id-[A-Fa-f0-9-]+)/elements/model\.html', response.text)
@@ -79,10 +78,7 @@ def fetch_html(
     session: Optional[requests.Session] = None,
 ) -> str:
     """Fetch HTML content from a URL."""
-    if session is None:
-        response = requests.get(url, headers=headers, timeout=timeout)
-    else:
-        response = session.get(url, headers=headers, timeout=timeout)
+    response = fetch_with_retry(session, url, headers, timeout)
     response.raise_for_status()
     return response.text
 
@@ -118,7 +114,9 @@ def collect_view_data_from_urls(
 
         view_url = f"{base_url}{guid}/views/{view_id}.html"
         try:
-            html_content = fetch_html(view_url, headers=headers, timeout=timeout, session=session)
+            response = fetch_with_retry(session, view_url, headers, timeout)
+            response.raise_for_status()
+            html_content = response.text
         except requests.RequestException as exc:
             logger.warning("  Warning: Failed to download %s (%s). Skipping.", view_id, exc)
             continue
@@ -256,6 +254,16 @@ Example usage:
         help="Directory for downloaded images (default: images/ relative to output)",
     )
     parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Generate a Markdown file alongside the XML output",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate the generated XML and print warnings",
+    )
+    parser.add_argument(
         "--timeout",
         default=30,
         type=int,
@@ -380,6 +388,20 @@ Example usage:
     generator = ArchiMateXMLGenerator(model_data)
     xml_root = generator.create_merged_xml(views_data, include_connections=args.connections)
     ArchiMateXMLGenerator.save_xml(xml_root, str(output_path))
+
+    if args.markdown:
+        markdown_path = output_path.with_suffix(".md")
+        archiscraper_to_markdown.write_markdown_file(output_path, markdown_path)
+        logger.info("  Saved: %s", markdown_path)
+
+    if args.validate:
+        warnings = generator.validate_xml(xml_root)
+        if warnings:
+            print("\nValidation warnings:")
+            for warning in warnings:
+                print(f"- {warning}")
+        else:
+            print("\nValidation passed: no warnings.")
 
     print("\n" + "=" * 60)
     print(f"SUCCESS: Created {output_path}")

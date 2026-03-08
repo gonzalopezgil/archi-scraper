@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 import re
+import time
 import uuid
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -144,6 +145,95 @@ def sanitize_filename(name: str) -> str:
     return sanitized if sanitized else 'unnamed'
 
 
+def _parse_retry_after(retry_after: Optional[str], fallback: float) -> float:
+    """Parse Retry-After header value into seconds."""
+    if retry_after is None:
+        return fallback
+    try:
+        return max(0.0, float(retry_after))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def fetch_with_retry(
+    session: Optional[requests.Session],
+    url: str,
+    headers: Dict[str, str],
+    timeout: int,
+    max_retries: int = 3,
+    backoff_factor: float = 1.0,
+) -> requests.Response:
+    """Fetch a URL with retry/backoff on transient errors."""
+    owns_session = False
+    if session is None:
+        session = requests.Session()
+        owns_session = True
+
+    try:
+        retries = 0
+        while True:
+            try:
+                response = session.get(url, headers=headers, timeout=timeout)
+            except requests.ConnectionError as exc:
+                if retries >= max_retries:
+                    raise
+                delay = backoff_factor * (2 ** retries)
+                logger.warning(
+                    "Retrying %s (%d/%d) in %.1fs due to connection error: %s",
+                    url,
+                    retries + 1,
+                    max_retries,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+                retries += 1
+                continue
+
+            status = response.status_code
+            if status == 429:
+                if retries >= max_retries:
+                    return response
+                delay = _parse_retry_after(
+                    response.headers.get("Retry-After"),
+                    backoff_factor * (2 ** retries),
+                )
+                logger.warning(
+                    "Retrying %s (%d/%d) in %.1fs due to HTTP 429",
+                    url,
+                    retries + 1,
+                    max_retries,
+                    delay,
+                )
+                time.sleep(delay)
+                retries += 1
+                continue
+
+            if 500 <= status <= 599:
+                if retries >= max_retries:
+                    return response
+                delay = backoff_factor * (2 ** retries)
+                logger.warning(
+                    "Retrying %s (%d/%d) in %.1fs due to HTTP %d",
+                    url,
+                    retries + 1,
+                    max_retries,
+                    delay,
+                    status,
+                )
+                time.sleep(delay)
+                retries += 1
+                continue
+
+            if 400 <= status <= 499:
+                return response
+
+            return response
+    finally:
+        if owns_session:
+            session.close()
+
+
 def download_view_images(
     base_url: str,
     guid: str,
@@ -190,7 +280,7 @@ def download_view_images(
             image_url = f"{base_url}{guid}/images/{view_id}.png"
 
             try:
-                response = session.get(image_url, headers=headers, timeout=timeout)
+                response = fetch_with_retry(session, image_url, headers, timeout)
                 if response.status_code == 404:
                     logger.warning("  Warning: Image not found for %s (404). Skipping.", view_id)
                     skipped += 1
@@ -688,6 +778,10 @@ class ArchiMateXMLGenerator:
                             "target": target_node,
                         })
 
+        warnings = self.validate_xml(root)
+        for warning in warnings:
+            logger.warning("XML validation: %s", warning)
+
         return root
 
     def create_merged_xml(
@@ -833,6 +927,10 @@ class ArchiMateXMLGenerator:
 
             logger.info("  Added view '%s' with %d nodes", view_data['view_name'], len(nodes_to_add))
 
+        warnings = self.validate_xml(root)
+        for warning in warnings:
+            logger.warning("XML validation: %s", warning)
+
         return root
 
     def _add_organizations(
@@ -930,6 +1028,58 @@ class ArchiMateXMLGenerator:
             add_folder_items(orgs_section, folder_id)
 
         logger.info("    Added organizations structure with %d root folders", len(root_folder_ids))
+
+    @staticmethod
+    def validate_xml(root: ET.Element) -> List[str]:
+        """Validate referential integrity for elements, relationships, and views."""
+        warnings: List[str] = []
+
+        def local_name(tag: str) -> str:
+            return tag.split('}', 1)[-1] if '}' in tag else tag
+
+        element_ids: List[str] = []
+        for elem in root.iter():
+            if local_name(elem.tag) == "element":
+                elem_id = elem.get("identifier")
+                if elem_id:
+                    element_ids.append(elem_id)
+
+        element_id_set = set()
+        for elem_id in element_ids:
+            if elem_id in element_id_set:
+                warnings.append(f"Duplicate element identifier: {elem_id}")
+            else:
+                element_id_set.add(elem_id)
+
+        relationship_ids: List[str] = []
+        for rel in root.iter():
+            if local_name(rel.tag) == "relationship":
+                rel_id = rel.get("identifier")
+                if rel_id:
+                    relationship_ids.append(rel_id)
+
+                source = rel.get("source")
+                target = rel.get("target")
+                if source and source not in element_id_set:
+                    warnings.append(f"Relationship source missing element: {source}")
+                if target and target not in element_id_set:
+                    warnings.append(f"Relationship target missing element: {target}")
+
+        relationship_id_set = set(relationship_ids)
+
+        for node in root.iter():
+            if local_name(node.tag) == "node":
+                elem_ref = node.get("elementRef")
+                if elem_ref and elem_ref not in element_id_set:
+                    warnings.append(f"Node elementRef missing element: {elem_ref}")
+
+        for conn in root.iter():
+            if local_name(conn.tag) == "connection":
+                rel_ref = conn.get("relationshipRef")
+                if rel_ref and rel_ref not in relationship_id_set:
+                    warnings.append(f"Connection relationshipRef missing relationship: {rel_ref}")
+
+        return warnings
 
     @staticmethod
     def prettify_xml(elem: ET.Element) -> str:

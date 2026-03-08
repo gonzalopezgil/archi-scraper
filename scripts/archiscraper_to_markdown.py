@@ -272,6 +272,117 @@ def write_views(views: List[Dict[str, object]], elements: Dict[str, Dict[str, st
     (views_dir / "index.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
+def render_markdown_document(
+    model_name: str,
+    elements: Dict[str, Dict[str, str]],
+    relationships: List[Dict[str, str]],
+    views: List[Dict[str, object]],
+) -> str:
+    rel_index = build_relationship_index(elements, relationships)
+
+    lines: List[str] = [
+        f"# {model_name}",
+        "",
+        f"- **Element count:** {len(elements)}",
+        f"- **Relationship count:** {len(relationships)}",
+        f"- **View count:** {len(views)}",
+        "",
+        "## Elements",
+    ]
+
+    for layer, _ in LAYER_FILES.items():
+        layer_elements = [
+            elem for elem in elements.values()
+            if classify_layer(elem["type"]) == layer
+        ]
+        if not layer_elements:
+            continue
+        lines.append(f"### {layer.title()} Layer")
+        for elem in sorted(layer_elements, key=lambda e: e["name"].lower()):
+            elem_id = elem["id"]
+            lines.append(f"#### {elem['name']}")
+            lines.append(f"- **Type:** {elem['type']}")
+            lines.append(f"- **ID:** {elem_id}")
+            documentation = elem.get("documentation", "").strip()
+            if documentation:
+                lines.append(f"- **Documentation:** {documentation}")
+
+            rel_lines: List[str] = []
+            for direction, rel_type, other_id in rel_index.get(elem_id, []):
+                other = elements.get(other_id)
+                other_name = other.get("name") if other else (other_id or "Unknown")
+                other_type = other.get("type") if other else "Unknown"
+                if direction == "out":
+                    rel_lines.append(f"  - ->{rel_type}-> {other_name} ({other_type})")
+                else:
+                    rel_lines.append(f"  - <-{rel_type}<- {other_name} ({other_type})")
+
+            if rel_lines:
+                rel_lines_sorted = sorted(rel_lines, key=lambda line: line.lower())
+                lines.append("- **Relationships:**")
+                lines.extend(rel_lines_sorted)
+            lines.append("")
+
+    lines.extend([
+        "## Relationships",
+        "| Source | Source Type | Relationship | Target | Target Type |",
+        "|--------|-----------|--------------|--------|-------------|",
+    ])
+
+    def display_name(elem_id: str) -> str:
+        if elem_id in elements:
+            return elements[elem_id]["name"]
+        return elem_id or "Unknown"
+
+    def display_type(elem_id: str) -> str:
+        if elem_id in elements:
+            return elements[elem_id]["type"]
+        return "Unknown"
+
+    sorted_rels = sorted(
+        relationships,
+        key=lambda r: (
+            display_name(r.get("source", "")).lower(),
+            display_name(r.get("target", "")).lower(),
+            r.get("type", ""),
+        ),
+    )
+
+    for rel in sorted_rels:
+        source = rel.get("source", "")
+        target = rel.get("target", "")
+        if source not in elements or target not in elements:
+            continue
+        lines.append(
+            f"| {display_name(source)} | {display_type(source)} | {rel.get('type', 'Unknown')} | "
+            f"{display_name(target)} | {display_type(target)} |"
+        )
+
+    lines.append("")
+    lines.append("## Views")
+
+    for view in sorted(views, key=lambda v: v["name"].lower()):
+        view_id = view.get("id", "")
+        view_name = view.get("name", "Unnamed View")
+        element_ids = sorted(view.get("elements", []))
+        element_names = [elements.get(elem_id, {"name": elem_id}).get("name", elem_id) for elem_id in element_ids]
+        element_names_sorted = sorted(element_names, key=lambda name: name.lower())
+        element_list = ", ".join(element_names_sorted) if element_names_sorted else "None"
+
+        lines.append(f"### {view_name}")
+        lines.append(f"- **ID:** {view_id}")
+        lines.append(f"- **Elements ({len(element_names_sorted)}):** {element_list}")
+        lines.append("")
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def write_markdown_file(xml_path: Path, output_path: Path) -> None:
+    model_name, elements, relationships, views = parse_model(xml_path)
+    content = render_markdown_document(model_name, elements, relationships, views)
+    output_path.write_text(content, encoding="utf-8")
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format='%(message)s')
     parser = argparse.ArgumentParser(description="Convert ArchiMate XML to structured Markdown.")
