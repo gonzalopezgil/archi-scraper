@@ -1,6 +1,8 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = ROOT / "scripts"
@@ -12,6 +14,7 @@ from archiscraper_core import (
     ArchiMateXMLGenerator,
     ModelDataParser,
     ViewParser,
+    download_view_images,
 )
 
 
@@ -88,6 +91,63 @@ class TestViewParser(unittest.TestCase):
         self.assertEqual(coords["w"], 100)
         self.assertEqual(coords["h"], 200)
 
+    def test_extract_type_from_cell_variants(self) -> None:
+        html = """
+        <table>
+          <tr>
+            <td class="i18n-elementtype-ApplicationComponent">App</td>
+            <td><a class="i18n-elementtype-BusinessActor">Actor</a></td>
+            <td><span class="i18n-relationshiptype-AssignmentRelationship">Rel</span></td>
+          </tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        cells = soup.find_all("td")
+
+        self.assertEqual(
+            ViewParser._extract_type_from_cell(cells[0], "i18n-elementtype-"),
+            "ApplicationComponent",
+        )
+        self.assertEqual(
+            ViewParser._extract_type_from_cell(cells[1], "i18n-elementtype-"),
+            "BusinessActor",
+        )
+        self.assertEqual(
+            ViewParser._extract_type_from_cell(cells[2], "i18n-relationshiptype-"),
+            "AssignmentRelationship",
+        )
+
+
+class TestDownloadViewImages(unittest.TestCase):
+    def test_download_view_images_uses_session(self) -> None:
+        views = [{"view_id": "id-view123", "view_name": "View 1"}]
+
+        class DummyResponse:
+            status_code = 200
+            content = b"image-bytes"
+
+            def raise_for_status(self) -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = Mock()
+            session.get.return_value = DummyResponse()
+            with patch("archiscraper_core.requests.get") as requests_get:
+                downloaded, skipped = download_view_images(
+                    base_url="http://example.com/report/",
+                    guid="id-guid",
+                    views=views,
+                    output_dir=tmpdir,
+                    user_agent="UA",
+                    timeout=5,
+                    session=session,
+                )
+                requests_get.assert_not_called()
+
+            session.get.assert_called_once()
+            self.assertEqual(downloaded, 1)
+            self.assertEqual(skipped, 0)
+            self.assertTrue((Path(tmpdir) / "View 1.png").exists())
 
 class TestXMLGeneration(unittest.TestCase):
     def test_xml_generation_contains_elements_relationships_views(self) -> None:

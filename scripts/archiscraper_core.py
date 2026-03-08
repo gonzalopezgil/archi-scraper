@@ -15,9 +15,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.dom import minidom
 from typing import Dict, List, Optional
+import logging
 
 import requests
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -148,6 +151,7 @@ def download_view_images(
     output_dir: str,
     user_agent: Optional[str] = None,
     timeout: int = 30,
+    session: Optional[requests.Session] = None,
 ) -> tuple[int, int]:
     """Download PNG images for each view in a report."""
     if not base_url.endswith('/'):
@@ -161,37 +165,46 @@ def download_view_images(
     downloaded = 0
     skipped = 0
 
-    for index, view_data in enumerate(views, start=1):
-        view_id = view_data.get('view_id')
-        view_name = view_data.get('view_name') or view_id or f"view-{index}"
-        if not view_id:
-            print(f"  Warning: Missing view_id for '{view_name}'. Skipping image.")
-            skipped += 1
-            continue
+    owns_session = False
+    if session is None:
+        session = requests.Session()
+        owns_session = True
 
-        safe_name = sanitize_filename(str(view_name))
-        filename = f"{safe_name}.png"
-        file_path = output_path / filename
-        if file_path.exists():
-            filename = f"{safe_name}_{view_id}.png"
-            file_path = output_path / filename
-
-        print(f"Downloading image {index}/{total}: {filename}...")
-        image_url = f"{base_url}{guid}/images/{view_id}.png"
-
-        try:
-            response = requests.get(image_url, headers=headers, timeout=timeout)
-            if response.status_code == 404:
-                print(f"  Warning: Image not found for {view_id} (404). Skipping.")
+    try:
+        for index, view_data in enumerate(views, start=1):
+            view_id = view_data.get('view_id')
+            view_name = view_data.get('view_name') or view_id or f"view-{index}"
+            if not view_id:
+                logger.warning("  Warning: Missing view_id for '%s'. Skipping image.", view_name)
                 skipped += 1
                 continue
-            response.raise_for_status()
-            with open(file_path, 'wb') as handle:
-                handle.write(response.content)
-            downloaded += 1
-        except requests.RequestException as exc:
-            print(f"  Warning: Failed to download image for {view_id} ({exc}). Skipping.")
-            skipped += 1
+
+            safe_name = sanitize_filename(str(view_name))
+            filename = f"{safe_name}.png"
+            file_path = output_path / filename
+            if file_path.exists():
+                filename = f"{safe_name}_{view_id}.png"
+                file_path = output_path / filename
+
+            logger.info("Downloading image %d/%d: %s...", index, total, filename)
+            image_url = f"{base_url}{guid}/images/{view_id}.png"
+
+            try:
+                response = session.get(image_url, headers=headers, timeout=timeout)
+                if response.status_code == 404:
+                    logger.warning("  Warning: Image not found for %s (404). Skipping.", view_id)
+                    skipped += 1
+                    continue
+                response.raise_for_status()
+                with open(file_path, 'wb') as handle:
+                    handle.write(response.content)
+                downloaded += 1
+            except requests.RequestException as exc:
+                logger.warning("  Warning: Failed to download image for %s (%s). Skipping.", view_id, exc)
+                skipped += 1
+    finally:
+        if owns_session:
+            session.close()
 
     return downloaded, skipped
 
@@ -210,41 +223,52 @@ class ModelDataParser:
         self.views: Dict[str, Dict[str, str]] = {}
         self.loaded = False
 
-    def load_from_url(self, model_url: str, headers: Optional[Dict[str, str]] = None, timeout: int = 30) -> bool:
+    def load_from_url(
+        self,
+        model_url: str,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: int = 30,
+        session: Optional[requests.Session] = None,
+    ) -> bool:
         """Download and parse model.html from a URL."""
         try:
             if headers is None:
                 headers = {"User-Agent": DEFAULT_USER_AGENT}
-            print(f"Fetching model data from: {model_url}")
-            response = requests.get(model_url, headers=headers, timeout=timeout)
+            logger.info("Fetching model data from: %s", model_url)
+            if session is None:
+                response = requests.get(model_url, headers=headers, timeout=timeout)
+            else:
+                response = session.get(model_url, headers=headers, timeout=timeout)
             response.raise_for_status()
             self._parse_content(response.text)
             self.loaded = True
-            print(
-                f"Model data loaded successfully: {len(self.elements)} elements, "
-                f"{len(self.folders)} folders"
+            logger.info(
+                "Model data loaded successfully: %d elements, %d folders",
+                len(self.elements),
+                len(self.folders),
             )
             return True
         except Exception as exc:
-            print(f"Error loading model.html: {exc}")
+            logger.error("Error loading model.html: %s", exc)
             self.loaded = False
             return False
 
     def load_from_file(self, model_html_path: str) -> bool:
         """Load and parse model.html from a local file path."""
         try:
-            print(f"Loading model data from: {model_html_path}")
+            logger.info("Loading model data from: %s", model_html_path)
             with open(model_html_path, 'r', encoding='utf-8') as handle:
                 content = handle.read()
             self._parse_content(content)
             self.loaded = True
-            print(
-                f"Model data loaded successfully: {len(self.elements)} elements, "
-                f"{len(self.folders)} folders"
+            logger.info(
+                "Model data loaded successfully: %d elements, %d folders",
+                len(self.elements),
+                len(self.folders),
             )
             return True
         except Exception as exc:
-            print(f"Error loading model.html: {exc}")
+            logger.error("Error loading model.html: %s", exc)
             self.loaded = False
             return False
 
@@ -281,7 +305,7 @@ class ModelDataParser:
             if 'id' in elem_data:
                 self.elements[elem_data['id']] = elem_data
 
-        print(f"  Parsed {len(self.elements)} elements from model.html")
+        logger.info("  Parsed %d elements from model.html", len(self.elements))
 
         folder_pattern = r'dataFolders\.push\(\s*\{([^}]+)\}\s*\);'
         folder_matches = re.findall(folder_pattern, content)
@@ -304,7 +328,7 @@ class ModelDataParser:
             if 'id' in folder_data:
                 self.folders[folder_data['id']] = folder_data
 
-        print(f"  Parsed {len(self.folders)} folders from model.html")
+        logger.info("  Parsed %d folders from model.html", len(self.folders))
 
         content_pattern = r'dataFoldersContent\.push\(\s*\{([^}]+)\}\s*\);'
         content_matches = re.findall(content_pattern, content)
@@ -321,7 +345,7 @@ class ModelDataParser:
                     'content_type': content_type_match.group(1) if content_type_match else 'Unknown',
                 })
 
-        print(f"  Parsed {len(self.folder_contents)} folder-content mappings")
+        logger.info("  Parsed %d folder-content mappings", len(self.folder_contents))
 
         views_pattern = r'dataViews\.push\(\s*\{([^}]+)\}\s*\);'
         views_matches = re.findall(views_pattern, content)
@@ -344,7 +368,7 @@ class ModelDataParser:
             if 'id' in view_data:
                 self.views[view_data['id']] = view_data
 
-        print(f"  Parsed {len(self.views)} views from model.html")
+        logger.info("  Parsed %d views from model.html", len(self.views))
 
     def get_element_documentation(self, elem_id: str) -> str:
         """Get documentation for an element."""
@@ -707,9 +731,10 @@ class ArchiMateXMLGenerator:
                 if rel_id not in all_relationships:
                     all_relationships[rel_id] = rel
 
-        print(
-            f"Merged: {len(all_elements)} unique elements, "
-            f"{len(all_relationships)} unique relationships"
+        logger.info(
+            "Merged: %d unique elements, %d unique relationships",
+            len(all_elements),
+            len(all_relationships),
         )
 
         elements_section = ET.SubElement(root, "elements")
@@ -806,7 +831,7 @@ class ArchiMateXMLGenerator:
                                 "target": target_node,
                             })
 
-            print(f"  Added view '{view_data['view_name']}' with {len(nodes_to_add)} nodes")
+            logger.info("  Added view '%s' with %d nodes", view_data['view_name'], len(nodes_to_add))
 
         return root
 
@@ -818,7 +843,7 @@ class ArchiMateXMLGenerator:
         views_data: List[Dict[str, object]],
     ) -> None:
         """Add organizations section with folder whitelisting."""
-        print("  Building folder structure with referential integrity...")
+        logger.info("  Building folder structure with referential integrity...")
 
         valid_ids = set(all_elements.keys())
         valid_ids.update(all_relationships.keys())
@@ -826,7 +851,7 @@ class ArchiMateXMLGenerator:
             if v_data.get('view_id'):
                 valid_ids.add(v_data['view_id'])
 
-        print(f"    Valid IDs for folder structure: {len(valid_ids)}")
+        logger.debug("    Valid IDs for folder structure: %d", len(valid_ids))
 
         folder_children: Dict[str, List[tuple]] = {}
         for fc in self.model_data.folder_contents:
@@ -870,9 +895,10 @@ class ArchiMateXMLGenerator:
                 included_folders.add(parent_id)
                 folders_to_check.append(parent_id)
 
-        print(
-            f"    Including {len(included_folders)} folders "
-            f"(filtered from {len(self.model_data.folders)})"
+        logger.info(
+            "    Including %d folders (filtered from %d)",
+            len(included_folders),
+            len(self.model_data.folders),
         )
 
         root_folder_ids = []
@@ -903,7 +929,7 @@ class ArchiMateXMLGenerator:
         for folder_id in root_folder_ids:
             add_folder_items(orgs_section, folder_id)
 
-        print(f"    Added organizations structure with {len(root_folder_ids)} root folders")
+        logger.info("    Added organizations structure with %d root folders", len(root_folder_ids))
 
     @staticmethod
     def prettify_xml(elem: ET.Element) -> str:
@@ -922,4 +948,4 @@ class ArchiMateXMLGenerator:
 
         with open(output_path, 'w', encoding='utf-8') as handle:
             handle.write(final)
-        print(f"  Saved: {output_path}")
+        logger.info("  Saved: %s", output_path)
