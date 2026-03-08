@@ -399,8 +399,8 @@ class ArchiScraperApp(QMainWindow):
                 padding: 8px;
             }
             QListWidget::item:selected {
-                background: #fff3e0;
-                color: #222;
+                background: #e8601c;
+                color: white;
                 border-left: 3px solid #e8601c;
                 padding-left: 8px;
             }
@@ -412,7 +412,7 @@ class ArchiScraperApp(QMainWindow):
                 background: transparent;
             }
             QScrollBar::handle:vertical {
-                background: rgba(0,0,0,0.15);
+                background: rgba(0,0,0,0.3);
                 border-radius: 4px;
                 min-height: 30px;
             }
@@ -930,7 +930,6 @@ class ArchiScraperApp(QMainWindow):
         self.new_export_button.clicked.connect(self._reset_to_source_step)
         buttons.addWidget(self.new_export_button)
         card_layout.addLayout(buttons)
-        card_layout.addStretch(1)
 
         layout.addWidget(card, 0, Qt.AlignmentFlag.AlignTop)
         return page
