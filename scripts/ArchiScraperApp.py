@@ -971,7 +971,7 @@ class ArchiScraperApp(QMainWindow):
             self.review_preview.setHtml(preview_html, QUrl(preview_url))
         else:
             # Generate metadata preview when raw HTML unavailable
-            self.review_preview.setHtml(self._generate_view_summary(view_data))
+            self.review_preview.setHtml(self._generate_view_summary(view_data), QUrl())
         self.preview_stack.setCurrentWidget(self.review_preview)
 
     def _generate_view_summary(self, view_data: dict) -> str:
