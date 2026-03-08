@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "archi-scraper"
-version = "1.2.0"
+version = "1.3.0"
 description = "ArchiScraper is a Python-based tool that extracts architecture data from published Archi HTML reports and converts them back into standard ArchiMate Open Exchange Format (.xml) files."
 authors = [
   { name = "Gonzalo López Gil", email = "gonzalo.lopez.gil@gmail.com" },
