@@ -277,6 +277,9 @@ class ArchiScraperApp(QMainWindow):
         central_widget.setObjectName("centralWidget")
         self.setCentralWidget(central_widget)
 
+        # Build path to checkmark SVG for checkbox indicator
+        _checkmark_path = str(Path(__file__).parent / "checkmark.svg").replace("\\", "/")
+
         self.setStyleSheet("""
             QMainWindow {
                 background: #f5f5f5;
@@ -355,6 +358,7 @@ class ArchiScraperApp(QMainWindow):
                 border: 2px solid #e8601c;
                 border-radius: 3px;
                 background: #e8601c;
+                image: url(CHECKMARK_SVG_PATH);
             }
             QCheckBox::indicator:unchecked:hover {
                 border-color: #e8601c;
@@ -414,7 +418,7 @@ class ArchiScraperApp(QMainWindow):
                 background: #e8601c;
                 border-radius: 6px;
             }
-        """)
+        """.replace("CHECKMARK_SVG_PATH", _checkmark_path))
 
         root_layout = QVBoxLayout(central_widget)
         root_layout.setContentsMargins(24, 24, 24, 16)
@@ -678,9 +682,10 @@ class ArchiScraperApp(QMainWindow):
 
         # Open in Browser button
         self.open_view_button = QPushButton("Open in Browser")
+        self.open_view_button.setFixedHeight(32)
         self.open_view_button.setStyleSheet(
             "background: transparent; color: #e8601c; border: 1px solid #e8601c; "
-            "border-radius: 6px; padding: 4px 12px; font-size: 12px;"
+            "border-radius: 8px; padding: 0 12px; font-size: 12px;"
         )
         self.open_view_button.setVisible(False)
         self.open_view_button.clicked.connect(self._open_current_view_in_browser)
