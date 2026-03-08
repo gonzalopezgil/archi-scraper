@@ -111,17 +111,22 @@ class TestWizardGui(unittest.TestCase):
             self.assertEqual(window.review_splitter.count(), 2)
             splitter_sizes = window.review_splitter.sizes()
             self.assertEqual(len(splitter_sizes), 2)
-            self.assertGreater(splitter_sizes[1], splitter_sizes[0])
+            self.assertGreaterEqual(splitter_sizes[1], splitter_sizes[0])
 
             first_item = window.view_list.item(0)
             first_widget = window.view_list.itemWidget(first_item)
             self.assertIsInstance(first_widget.checkbox, QCheckBox)
             self.assertEqual(first_widget.checkbox.text(), "")
             self.assertEqual(first_widget.name_label.text(), "Application Overview")
-            self.assertEqual(first_widget.count_label.text(), "1 elements")
+            self.assertEqual(first_widget.count_label.text(), "1 el.")
             self.assertEqual(first_widget.toolTip(), "Application Overview - 1 elements")
             self.assertEqual(first_widget.name_label.toolTip(), "Application Overview - 1 elements")
 
+            # No item auto-selected → placeholder shown initially
+            self.assertEqual(window.preview_stack.currentWidget(), window.preview_placeholder)
+
+            # Simulate user clicking first item
+            window.view_list.setCurrentRow(0)
             self.assertEqual(window.preview_stack.currentWidget(), window.review_preview)
             self.assertEqual(window.review_preview._url.toString(), "https://example.test/views/view-1.html")
 

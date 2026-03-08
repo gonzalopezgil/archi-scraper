@@ -31,7 +31,8 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
     QListWidget, QLabel, QListWidgetItem, QCheckBox, QDialog,
     QDialogButtonBox, QProgressBar, QStackedWidget, QFrame, QRadioButton,
-    QButtonGroup, QGridLayout, QGraphicsDropShadowEffect, QSplitter
+    QButtonGroup, QGridLayout, QGraphicsDropShadowEffect, QSplitter,
+    QSizePolicy
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
@@ -145,13 +146,19 @@ class ReviewListItemWidget(QWidget):
 
         self.name_label = QLabel(name)
         self.name_label.setStyleSheet("color: #222;")
-        layout.addWidget(self.name_label)
+        self.name_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        self.name_label.setMinimumWidth(50)
+        layout.addWidget(self.name_label, 1)
 
-        self.count_label = QLabel(f"{count} elements")
+        self.count_label = QLabel(f"{count} el.")
         self.count_label.setProperty("subtle", True)
-        self.count_label.setStyleSheet("color: #7a7a7a; font-size: 12px;")
+        self.count_label.setStyleSheet("color: #999; font-size: 11px;")
+        self.count_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred
+        )
         layout.addWidget(self.count_label)
-        layout.addStretch(1)
 
         self.setToolTip(tooltip)
         self.checkbox.setToolTip(tooltip)
@@ -303,6 +310,13 @@ class ArchiScraperApp(QMainWindow):
                 background: #e9e9e9;
                 color: #999;
             }
+            QCheckBox {
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+            }
             QLineEdit, QListWidget {
                 background: white;
                 border: 1px solid #d7d7d7;
@@ -363,6 +377,8 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_source_page(self):
         page = QWidget()
+        page.setAutoFillBackground(True)
+        page.setStyleSheet("background: #f5f5f5;")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(24)
@@ -451,6 +467,8 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_review_page(self):
         page = QWidget()
+        page.setAutoFillBackground(True)
+        page.setStyleSheet("background: #f5f5f5;")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -507,18 +525,21 @@ class ArchiScraperApp(QMainWindow):
         preview_layout.setContentsMargins(0, 0, 0, 0)
 
         self.preview_stack = QStackedWidget()
-        self.preview_placeholder = QLabel("Select a view to preview")
+        self.preview_placeholder = QLabel("Click a view to preview")
         self.preview_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_placeholder.setProperty("subtle", True)
-        self.preview_placeholder.setStyleSheet("color: #8a8a8a;")
+        self.preview_placeholder.setStyleSheet(
+            "color: #999; font-size: 16px; font-weight: 500; background: #fafafa;"
+            " border: 2px dashed #d0d0d0; border-radius: 8px; padding: 40px;"
+        )
+        self.preview_placeholder.setMinimumHeight(200)
         self.preview_stack.addWidget(self.preview_placeholder)
 
         self.review_preview = QWebEngineView()
         self.preview_stack.addWidget(self.review_preview)
         preview_layout.addWidget(self.preview_stack)
         self.review_splitter.addWidget(self.preview_container)
-        self.review_splitter.setStretchFactor(0, 2)
-        self.review_splitter.setStretchFactor(1, 3)
+        self.review_splitter.setStretchFactor(0, 1)
+        self.review_splitter.setStretchFactor(1, 1)
         card_layout.addWidget(self.review_splitter, 1)
 
         nav = QHBoxLayout()
@@ -540,6 +561,8 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_options_page(self):
         page = QWidget()
+        page.setAutoFillBackground(True)
+        page.setStyleSheet("background: #f5f5f5;")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -640,6 +663,8 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_done_page(self):
         page = QWidget()
+        page.setAutoFillBackground(True)
+        page.setStyleSheet("background: #f5f5f5;")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -808,8 +833,7 @@ class ArchiScraperApp(QMainWindow):
             )
             self.view_list.setItemWidget(item, widget)
         self.view_list.blockSignals(False)
-        if self.view_list.count():
-            self.view_list.setCurrentRow(0)
+        # Don't auto-select row 0 — show placeholder until user clicks
         self._filter_review_list(self.review_filter_input.text())
         self._update_selection_ui()
         self._update_preview_panel()
@@ -888,7 +912,8 @@ class ArchiScraperApp(QMainWindow):
             if not is_hidden and first_visible_row is None:
                 first_visible_row = index
         current_item = self.view_list.currentItem()
-        if current_item is None or current_item.isHidden():
+        if current_item and current_item.isHidden():
+            # Current selection is hidden by filter — jump to first visible
             if first_visible_row is not None:
                 self.view_list.setCurrentRow(first_visible_row)
             else:
@@ -911,7 +936,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _set_review_splitter_sizes(self):
         total_width = max(self.review_splitter.size().width(), 1000)
-        self.review_splitter.setSizes([int(total_width * 0.4), int(total_width * 0.6)])
+        self.review_splitter.setSizes([int(total_width * 0.5), int(total_width * 0.5)])
 
     def _go_to_options_step(self):
         if not self.selected_view_ids:
