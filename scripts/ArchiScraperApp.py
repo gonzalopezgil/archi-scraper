@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QLabel, QListWidgetItem, QCheckBox, QDialog,
     QDialogButtonBox, QProgressBar, QStackedWidget, QFrame, QRadioButton,
     QButtonGroup, QGridLayout, QGraphicsDropShadowEffect, QSplitter,
-    QSizePolicy
+    QSizePolicy, QTextBrowser
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
@@ -549,7 +549,9 @@ class ArchiScraperApp(QMainWindow):
         self.preview_placeholder.setMinimumHeight(200)
         self.preview_stack.addWidget(self.preview_placeholder)
 
-        self.review_preview = QWebEngineView()
+        self.review_preview = QTextBrowser()
+        self.review_preview.setOpenExternalLinks(True)
+        self.review_preview.setStyleSheet("QTextBrowser { background: #fafafa; border: none; }")
         self.preview_stack.addWidget(self.review_preview)
         preview_layout.addWidget(self.preview_stack)
         self.review_splitter.addWidget(self.preview_container)
@@ -968,10 +970,10 @@ class ArchiScraperApp(QMainWindow):
         preview_html = view_data.get("preview_html")
         preview_url = view_data.get("preview_url", "")
         if preview_html:
-            self.review_preview.setHtml(preview_html, QUrl(preview_url))
+            self.review_preview.setHtml(preview_html)
         else:
             # Generate metadata preview when raw HTML unavailable
-            self.review_preview.setHtml(self._generate_view_summary(view_data), QUrl())
+            self.review_preview.setHtml(self._generate_view_summary(view_data))
         self.preview_stack.setCurrentWidget(self.review_preview)
 
     def _generate_view_summary(self, view_data: dict) -> str:
@@ -985,31 +987,22 @@ class ArchiScraperApp(QMainWindow):
             for eid, info in list(elements.items())[:50]:
                 etype = info.get("type", "Unknown") if isinstance(info, dict) else "Element"
                 ename = info.get("name", eid) if isinstance(info, dict) else str(info)
-                rows += f"<tr><td style='padding:8px 12px;border-bottom:1px solid #eee'>{ename}</td>"
-                rows += f"<td style='padding:8px 12px;border-bottom:1px solid #eee;color:#666'>{etype}</td></tr>"
+                rows += f"<tr><td style='padding:4px 8px;border-bottom:1px solid #ddd'>{ename}</td>"
+                rows += f"<td style='padding:4px 8px;border-bottom:1px solid #ddd;color:#666'>{etype}</td></tr>"
             if len(elements) > 50:
-                rows += f"<tr><td colspan='2' style='padding:8px 12px;color:#999'>... and {len(elements) - 50} more</td></tr>"
-            content = f"<table><tr><th>Element</th><th>Type</th></tr>{rows}</table>"
+                rows += f"<tr><td colspan='2' style='padding:4px 8px;color:#999'>... and {len(elements) - 50} more</td></tr>"
+            content = f"""<table cellspacing='0' cellpadding='0' width='100%' style='border:1px solid #ddd'>
+                <tr><th style='background-color:#e8601c;color:white;padding:6px 8px;text-align:left'>Element</th>
+                <th style='background-color:#e8601c;color:white;padding:6px 8px;text-align:left'>Type</th></tr>
+                {rows}</table>"""
         else:
-            content = """<div class="empty">
-                <p>Element details not available for this view.</p>
-                <p style="font-size:12px;color:#999">The source report serves view content dynamically.<br>
-                Elements will be included in the exported XML/JSON.</p>
-            </div>"""
-        return f"""<!DOCTYPE html><html><head><style>
-            body {{ font-family: -apple-system, sans-serif; margin: 24px; color: #222; background: #fafafa; }}
-            h2 {{ font-size: 22px; margin: 0 0 4px 0; color: #222; }}
-            .vid {{ color: #999; font-size: 11px; font-family: monospace; margin-bottom: 16px; }}
-            .stats {{ color: #666; font-size: 13px; margin-bottom: 16px; }}
-            .empty {{ background: white; border-radius: 8px; padding: 24px; text-align: center; color: #666;
-                      box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-            table {{ border-collapse: collapse; width: 100%; background: white; border-radius: 8px;
-                     overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-            th {{ background: #e8601c; color: white; padding: 10px 12px; text-align: left; font-size: 13px; }}
-        </style></head><body>
-            <h2>{name}</h2>
-            <div class="vid">{view_id}</div>
-            <div class="stats">{len(elements)} elements &middot; {len(relationships)} relationships</div>
+            content = "<p style='color:#666'>Element details not available for this view."
+            content += "<br><small style='color:#999'>The source report serves view content dynamically. "
+            content += "Elements will be included in the exported XML/JSON.</small></p>"
+        return f"""<html><body style='margin:16px;color:#222'>
+            <h2 style='margin:0 0 2px 0'>{name}</h2>
+            <p style='color:#999;font-size:small;margin:0 0 12px 0'>{view_id}</p>
+            <p style='color:#666;margin:0 0 12px 0'>{len(elements)} elements &middot; {len(relationships)} relationships</p>
             {content}
         </body></html>"""
 

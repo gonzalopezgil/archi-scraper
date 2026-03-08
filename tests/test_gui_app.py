@@ -130,7 +130,8 @@ class TestWizardGui(unittest.TestCase):
 
             # First item auto-selected → preview shown immediately
             self.assertEqual(window.preview_stack.currentWidget(), window.review_preview)
-            self.assertEqual(window.review_preview._url.toString(), "https://example.test/views/view-1.html")
+            # QTextBrowser shows generated summary HTML with view name
+            self.assertIn("Application Overview", window.review_preview.toHtml())
 
             dot_styles = [dot.styleSheet() for dot in window.review_stepper._dots]
             self.assertEqual(window.review_stepper._dots[0].text(), "✓")
@@ -144,7 +145,7 @@ class TestWizardGui(unittest.TestCase):
             self.assertTrue(window.view_list.item(0).isHidden())
             self.assertFalse(window.view_list.item(1).isHidden())
             self.assertEqual(window.view_list.currentItem(), window.view_list.item(1))
-            self.assertEqual(window.review_preview._url.toString(), "https://example.test/views/view-2.html")
+            self.assertIn("Technology Landscape", window.review_preview.toHtml())
 
             second_widget = window.view_list.itemWidget(window.view_list.item(1))
             second_widget.checkbox.setChecked(False)
