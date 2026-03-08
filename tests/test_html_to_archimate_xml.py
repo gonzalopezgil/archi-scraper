@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--images-dir")
     parser.add_argument("--markdown", action="store_true")
     parser.add_argument("--validate", action="store_true")
+    parser.add_argument("--format", choices=["xml", "json", "both"], default="xml")
     return parser
 
 
@@ -112,6 +113,11 @@ class TestCliValidation(unittest.TestCase):
         parser = build_parser()
         args = parser.parse_args(["--model", "model.html", "--views", "view.html", "--markdown"])
         self.assertTrue(args.markdown)
+
+    def test_format_flag_parses(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model", "model.html", "--views", "view.html", "--format", "json"])
+        self.assertEqual(args.format, "json")
 
 
 class TestUrlValidation(unittest.TestCase):

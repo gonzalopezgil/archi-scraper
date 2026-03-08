@@ -185,6 +185,53 @@ class TestDownloadViewImagesAdditional(unittest.TestCase):
         self.assertEqual(downloaded, 0)
         self.assertEqual(skipped, 1)
 
+
+class TestExportJson(unittest.TestCase):
+    def test_export_json_structure(self) -> None:
+        root = ET.Element("model")
+        ET.SubElement(root, "name").text = "Sample Model"
+
+        elements_section = ET.SubElement(root, "elements")
+        element = ET.SubElement(elements_section, "element", {
+            "identifier": "id-elem1",
+            "xsi:type": "ApplicationComponent",
+        })
+        ET.SubElement(element, "name").text = "App"
+        ET.SubElement(element, "documentation").text = "Doc"
+
+        rels_section = ET.SubElement(root, "relationships")
+        ET.SubElement(rels_section, "relationship", {
+            "identifier": "id-rel1",
+            "xsi:type": "Assignment",
+            "source": "id-elem1",
+            "target": "id-elem1",
+        })
+
+        views_section = ET.SubElement(root, "views")
+        diagrams = ET.SubElement(views_section, "diagrams")
+        view = ET.SubElement(diagrams, "view", {"identifier": "id-view1"})
+        ET.SubElement(view, "name").text = "View 1"
+        ET.SubElement(view, "node", {
+            "identifier": "id-node1",
+            "elementRef": "id-elem1",
+            "x": "0",
+            "y": "0",
+            "w": "100",
+            "h": "100",
+        })
+
+        generator = ArchiMateXMLGenerator(ModelDataParser())
+        data = generator.export_json(root)
+
+        self.assertIn("name", data)
+        self.assertIn("elements", data)
+        self.assertIn("relationships", data)
+        self.assertIn("views", data)
+        self.assertEqual(data["name"], "Sample Model")
+        self.assertEqual(len(data["elements"]), 1)
+        self.assertEqual(len(data["relationships"]), 1)
+        self.assertEqual(len(data["views"]), 1)
+
     def test_download_handles_request_exception(self) -> None:
         views = [{"view_id": "id-view500", "view_name": "Error View"}]
 
