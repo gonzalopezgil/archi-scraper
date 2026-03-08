@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import requests
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = ROOT / "scripts"
@@ -20,6 +21,7 @@ from archiscraper_core import (
     decode_url,
     download_view_images,
     extract_id_from_href,
+    fetch_with_retry,
     fix_relationship_type,
     sanitize_filename,
 )
@@ -261,6 +263,41 @@ class TestExtractIdFromHref(unittest.TestCase):
 
     def test_none(self) -> None:
         self.assertIsNone(extract_id_from_href(None))
+
+
+class TestFetchWithRetry(unittest.TestCase):
+    def test_retries_on_5xx_then_succeeds(self) -> None:
+        class DummyResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+                self.headers = {}
+
+        session = Mock()
+        session.get.side_effect = [
+            DummyResponse(500),
+            DummyResponse(500),
+            DummyResponse(200),
+        ]
+
+        with patch("archiscraper_core.time.sleep") as sleep_mock:
+            response = fetch_with_retry(session, "http://example.com", {}, 5)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(session.get.call_count, 3)
+        self.assertEqual(sleep_mock.call_count, 2)
+
+    def test_no_retry_on_404(self) -> None:
+        class DummyResponse:
+            status_code = 404
+            headers = {}
+
+        session = Mock()
+        session.get.return_value = DummyResponse()
+
+        response = fetch_with_retry(session, "http://example.com", {}, 5)
+
+        self.assertEqual(response.status_code, 404)
+        session.get.assert_called_once()
 class TestXMLGeneration(unittest.TestCase):
     def test_xml_generation_contains_elements_relationships_views(self) -> None:
         model_data = ModelDataParser()
@@ -303,6 +340,36 @@ class TestXMLGeneration(unittest.TestCase):
         self.assertEqual(len(relationships), 1)
         self.assertEqual(len(views), 1)
         self.assertGreaterEqual(len(connections), 1)
+
+
+class TestXMLValidation(unittest.TestCase):
+    def test_valid_xml_returns_empty(self) -> None:
+        root = ET.Element("model")
+        elements = ET.SubElement(root, "elements")
+        ET.SubElement(elements, "element", {"identifier": "id-1"})
+        ET.SubElement(elements, "element", {"identifier": "id-2"})
+        relationships = ET.SubElement(root, "relationships")
+        ET.SubElement(relationships, "relationship", {"identifier": "rel-1", "source": "id-1", "target": "id-2"})
+        views = ET.SubElement(root, "views")
+        diagrams = ET.SubElement(views, "diagrams")
+        view = ET.SubElement(diagrams, "view", {"identifier": "view-1"})
+        ET.SubElement(view, "node", {"elementRef": "id-1"})
+        ET.SubElement(view, "connection", {"relationshipRef": "rel-1"})
+
+        warnings = ArchiMateXMLGenerator.validate_xml(root)
+
+        self.assertEqual(warnings, [])
+
+    def test_dangling_relationship_reference_warns(self) -> None:
+        root = ET.Element("model")
+        elements = ET.SubElement(root, "elements")
+        ET.SubElement(elements, "element", {"identifier": "id-1"})
+        relationships = ET.SubElement(root, "relationships")
+        ET.SubElement(relationships, "relationship", {"identifier": "rel-1", "source": "missing", "target": "id-1"})
+
+        warnings = ArchiMateXMLGenerator.validate_xml(root)
+
+        self.assertTrue(any("Relationship source missing element" in warning for warning in warnings))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--connections", action="store_true")
     parser.add_argument("--images", action="store_true")
     parser.add_argument("--images-dir")
+    parser.add_argument("--markdown", action="store_true")
+    parser.add_argument("--validate", action="store_true")
     return parser
 
 
@@ -41,6 +43,8 @@ class TestCliValidation(unittest.TestCase):
             connections=False,
             images=False,
             images_dir=None,
+            markdown=False,
+            validate=False,
         )
         with self.assertRaises(SystemExit):
             module.validate_args(parser, args)
@@ -59,6 +63,8 @@ class TestCliValidation(unittest.TestCase):
             connections=False,
             images=False,
             images_dir=None,
+            markdown=False,
+            validate=False,
         )
         with self.assertRaises(SystemExit):
             module.validate_args(parser, args)
@@ -77,6 +83,8 @@ class TestCliValidation(unittest.TestCase):
             connections=False,
             images=False,
             images_dir=None,
+            markdown=False,
+            validate=False,
         )
         with self.assertRaises(SystemExit):
             module.validate_args(parser, args)
@@ -95,8 +103,15 @@ class TestCliValidation(unittest.TestCase):
             connections=False,
             images=False,
             images_dir=None,
+            markdown=False,
+            validate=False,
         )
         module.validate_args(parser, args)
+
+    def test_markdown_flag_parses(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model", "model.html", "--views", "view.html", "--markdown"])
+        self.assertTrue(args.markdown)
 
 
 class TestUrlValidation(unittest.TestCase):
@@ -133,6 +148,7 @@ class TestBuildBaseUrl(unittest.TestCase):
 class TestDiscoverModelUrl(unittest.TestCase):
     def test_raises_on_missing_guid(self) -> None:
         class DummyResponse:
+            status_code = 200
             text = "<html><body>No GUID here</body></html>"
 
             def raise_for_status(self) -> None:
@@ -151,6 +167,7 @@ class TestDiscoverModelUrl(unittest.TestCase):
 
     def test_discovers_guid(self) -> None:
         class DummyResponse:
+            status_code = 200
             text = '<a href="id-abc123/elements/model.html">model</a>'
 
             def raise_for_status(self) -> None:
