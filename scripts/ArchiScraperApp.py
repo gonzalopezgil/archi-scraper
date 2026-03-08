@@ -1084,27 +1084,6 @@ class ArchiScraperApp(QMainWindow):
                 self.selected_view_ids.add(item.data(Qt.ItemDataRole.UserRole))
         self._update_selection_ui()
 
-    def _on_image_fetched(self, data_url, view_data):
-        """Callback when JS fetch returns image as data URL (or empty on failure)."""
-        if data_url and data_url.startswith('data:'):
-            import base64
-            from PyQt6.QtGui import QPixmap
-            # Extract base64 from data URL: "data:image/png;base64,..."
-            b64 = data_url.split(',', 1)[1] if ',' in data_url else ''
-            if b64:
-                pixmap = QPixmap()
-                pixmap.loadFromData(base64.b64decode(b64))
-                if not pixmap.isNull():
-                    width = max(self.preview_stack.width() - 20, 400)
-                    if pixmap.width() > width:
-                        pixmap = pixmap.scaledToWidth(width, Qt.TransformationMode.SmoothTransformation)
-                    self.review_image_label.setPixmap(pixmap)
-                    self.preview_stack.setCurrentWidget(self.review_image_scroll)
-                    return
-        # Fallback to metadata summary
-        self.review_preview.setHtml(self._generate_view_summary(view_data))
-        self.preview_stack.setCurrentWidget(self.review_preview)
-
     def _open_current_view_in_browser(self):
         """Open the currently selected view's HTML page in the default browser."""
         item = self.view_list.currentItem()
@@ -1178,28 +1157,30 @@ class ArchiScraperApp(QMainWindow):
         # Show/hide "Open in Browser" button
         self.open_view_button.setVisible(bool(self.current_source_url and view_id))
 
-        # Try to fetch diagram image via JavaScript in the hidden_web_view (has NATO session)
+        # Try to download diagram PNG via HTTP (same method as CLI --images)
+        
         if self.current_source_url and view_id and hasattr(self, 'model_guid') and self.model_guid:
             result = self._get_image_base_and_guid()
             if result:
                 base_url, guid = result
                 image_url = f"{base_url}{guid}/images/{view_id}.png"
-                # Use JS fetch in hidden_web_view to download image as base64
-                js = f"""
-                (function() {{
-                    return fetch('{image_url}')
-                        .then(r => r.ok ? r.blob() : Promise.reject('not found'))
-                        .then(blob => new Promise((resolve, reject) => {{
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result);
-                            reader.onerror = reject;
-                            reader.readAsDataURL(blob);
-                        }}))
-                        .catch(() => '');
-                }})()
-                """
-                self.hidden_web_view.page().runJavaScript(js, 0, lambda data: self._on_image_fetched(data, view_data))
-                return  # Wait for async callback
+                try:
+                    from archiscraper_core import fetch_with_retry
+                    from PyQt6.QtGui import QPixmap
+                    headers = {"User-Agent": self._get_user_agent()}
+                    resp = fetch_with_retry(self.session, image_url, headers, timeout=10)
+                    if resp.status_code == 200 and len(resp.content) > 100:
+                        pixmap = QPixmap()
+                        pixmap.loadFromData(resp.content)
+                        if not pixmap.isNull():
+                            width = max(self.preview_stack.width() - 16, 400)
+                            if pixmap.width() > width:
+                                pixmap = pixmap.scaledToWidth(width, Qt.TransformationMode.SmoothTransformation)
+                            self.review_image_label.setPixmap(pixmap)
+                            self.preview_stack.setCurrentWidget(self.review_image_scroll)
+                            return
+                except Exception:
+                    pass
 
         # Fallback to generated metadata summary
         self.review_preview.setHtml(self._generate_view_summary(view_data))
