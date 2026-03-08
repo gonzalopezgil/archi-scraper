@@ -28,7 +28,7 @@ from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt, QEvent
 from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor, QPalette
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
+    QLineEdit, QPushButton, QFileDialog, QMessageBox,
     QListWidget, QLabel, QListWidgetItem, QCheckBox, QDialog,
     QDialogButtonBox, QProgressBar, QStackedWidget, QFrame, QRadioButton,
     QButtonGroup, QGridLayout, QGraphicsDropShadowEffect, QSplitter,
@@ -219,6 +219,19 @@ class PreviewDialog(QDialog):
         layout.addWidget(self.web_view)
 
 
+class StatusMessageProxy:
+    """Compatibility shim for code/tests expecting status_bar methods."""
+
+    def __init__(self, owner):
+        self._owner = owner
+
+    def showMessage(self, message: str) -> None:
+        self._owner._set_status_message(message)
+
+    def currentMessage(self) -> str:
+        return self._owner._current_status_message()
+
+
 class ArchiScraperApp(QMainWindow):
     """Main application window for ArchiScraper."""
 
@@ -329,6 +342,32 @@ class ArchiScraperApp(QMainWindow):
             QCheckBox::indicator {
                 width: 18px;
                 height: 18px;
+                border: 2px solid #999;
+                border-radius: 3px;
+                background: white;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #e8601c;
+                border-radius: 3px;
+                background: #e8601c;
+                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6.3 L4.7 9 L10 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+            }
+            QCheckBox#download_images_checkbox::indicator,
+            QCheckBox#include_connections_checkbox::indicator,
+            QCheckBox#markdown_checkbox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 2px solid #999;
+                border-radius: 3px;
+                background: white;
+            }
+            QCheckBox#download_images_checkbox::indicator:checked,
+            QCheckBox#include_connections_checkbox::indicator:checked,
+            QCheckBox#markdown_checkbox::indicator:checked {
+                border: 2px solid #e8601c;
+                border-radius: 3px;
+                background: #e8601c;
+                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6.3 L4.7 9 L10 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
             }
             QLineEdit, QListWidget {
                 background: white;
@@ -367,13 +406,28 @@ class ArchiScraperApp(QMainWindow):
         self.stack.addWidget(self.page_options)
         self.stack.addWidget(self.page_done)
 
+        self.status_progress_container = QWidget()
+        self.status_progress_container.setMaximumWidth(452)
+        status_progress_layout = QVBoxLayout(self.status_progress_container)
+        status_progress_layout.setContentsMargins(0, 0, 0, 0)
+        status_progress_layout.setSpacing(8)
+        self.status_message_label = QLabel("Ready. Load a report to begin.")
+        self.status_message_label.setProperty("subtle", True)
+        self.status_message_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.status_message_label.setWordWrap(True)
+        status_progress_layout.addWidget(
+            self.status_message_label, alignment=Qt.AlignmentFlag.AlignHCenter
+        )
         self.batch_progress = QProgressBar()
+        self.batch_progress.setMaximumWidth(452)
         self.batch_progress.setVisible(False)
-        root_layout.addWidget(self.batch_progress)
-
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready. Load a report to begin.")
+        status_progress_layout.addWidget(
+            self.batch_progress, alignment=Qt.AlignmentFlag.AlignHCenter
+        )
+        root_layout.addWidget(
+            self.status_progress_container, 0, Qt.AlignmentFlag.AlignHCenter
+        )
+        self.status_bar = StatusMessageProxy(self)
 
         self._go_to_step(1)
         self._update_selection_ui()
@@ -607,6 +661,14 @@ class ArchiScraperApp(QMainWindow):
         self.xml_radio = QRadioButton("XML")
         self.json_radio = QRadioButton("JSON")
         self.both_radio = QRadioButton("Both")
+        radio_indicator_style = (
+            "QRadioButton::indicator { width: 16px; height: 16px; }"
+            "QRadioButton::indicator:unchecked { border: 2px solid #999; border-radius: 8px; background: white; }"
+            "QRadioButton::indicator:checked { border: 2px solid #e8601c; border-radius: 8px; background: #e8601c; }"
+        )
+        self.xml_radio.setStyleSheet(radio_indicator_style)
+        self.json_radio.setStyleSheet(radio_indicator_style)
+        self.both_radio.setStyleSheet(radio_indicator_style)
         self.both_radio.setChecked(True)
         self.format_group.addButton(self.xml_radio, 1)
         self.format_group.addButton(self.json_radio, 2)
@@ -631,6 +693,20 @@ class ArchiScraperApp(QMainWindow):
         self.markdown_checkbox = QCheckBox("Also generate Markdown summary")
         self.include_connections_checkbox = QCheckBox("Include connections in views")
         self.download_images_checkbox = QCheckBox("Download diagram images")
+        self.markdown_checkbox.setObjectName("markdown_checkbox")
+        self.include_connections_checkbox.setObjectName("include_connections_checkbox")
+        self.download_images_checkbox.setObjectName("download_images_checkbox")
+        checkbox_indicator_style = (
+            "QCheckBox::indicator { width: 16px; height: 16px; }"
+            "QCheckBox::indicator:unchecked { border: 2px solid #999; border-radius: 3px; background: white; }"
+            "QCheckBox::indicator:checked {"
+            " border: 2px solid #e8601c; border-radius: 3px; background: #e8601c;"
+            " image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 6.3 L4.7 9 L10 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>\");"
+            "}"
+        )
+        self.markdown_checkbox.setStyleSheet(checkbox_indicator_style)
+        self.include_connections_checkbox.setStyleSheet(checkbox_indicator_style)
+        self.download_images_checkbox.setStyleSheet(checkbox_indicator_style)
         options_section_layout.addWidget(self.markdown_checkbox)
         options_section_layout.addWidget(self.include_connections_checkbox)
         options_section_layout.addWidget(self.download_images_checkbox)
@@ -665,11 +741,13 @@ class ArchiScraperApp(QMainWindow):
         nav.setSpacing(12)
         self.options_back_button = QPushButton("← Back")
         self.options_back_button.setProperty("secondary", True)
+        self.options_back_button.setFixedHeight(40)
         self.options_back_button.clicked.connect(lambda: self._go_to_step(2))
         nav.addWidget(self.options_back_button)
         nav.addStretch(1)
         self.export_button = QPushButton("Export")
         self.export_button.setStyleSheet("background: #e8601c; color: white; font-weight: 600; min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;")
+        self.export_button.setFixedHeight(40)
         self.export_button.clicked.connect(self._on_export_clicked)
         nav.addWidget(self.export_button)
         card_layout.addLayout(nav)
@@ -694,7 +772,7 @@ class ArchiScraperApp(QMainWindow):
         self.done_header_label = QLabel("Export complete")
         self.done_header_label.setProperty("header", True)
         self.done_header_label.setStyleSheet(
-            "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 12px; "
+            "background-color: #e6f4ea; color: #1e6b3a; padding: 4px 8px; font-size: 14px; line-height: 1.2; "
             "border-radius: 6px; border-left: 3px solid #34a853;"
         )
         card_layout.addWidget(self.done_header_label)
@@ -756,7 +834,13 @@ class ArchiScraperApp(QMainWindow):
         self.options_stepper.update_step(3 if step >= 3 else 2)
         self.done_stepper.update_step(4 if step >= 4 else 3)
         step_names = {1: "Source", 2: "Review", 3: "Options", 4: "Done"}
-        self.status_bar.showMessage(f"Step {step} of 4 — {step_names.get(step, '')}")
+        self._set_status_message(f"Step {step} of 4 — {step_names.get(step, '')}")
+
+    def _set_status_message(self, message: str) -> None:
+        self.status_message_label.setText(message)
+
+    def _current_status_message(self) -> str:
+        return self.status_message_label.text()
 
     def _get_user_agent(self) -> str:
         user_agent = self.user_agent_input.text().strip()
@@ -773,7 +857,7 @@ class ArchiScraperApp(QMainWindow):
         return 60
 
     def _set_busy(self, message: str, indeterminate: bool = False, total_steps: int = 0):
-        self.status_bar.showMessage(message)
+        self._set_status_message(message)
         if indeterminate:
             self.batch_progress.setRange(0, 0)
         else:
@@ -783,7 +867,7 @@ class ArchiScraperApp(QMainWindow):
         QApplication.processEvents()
 
     def _show_progress(self, total_steps: int) -> None:
-        self._set_busy(self.status_bar.currentMessage(), indeterminate=False, total_steps=total_steps)
+        self._set_busy(self._current_status_message(), indeterminate=False, total_steps=total_steps)
 
     def _update_progress(self, value: int) -> None:
         self.batch_progress.setValue(value)
@@ -818,7 +902,7 @@ class ArchiScraperApp(QMainWindow):
         self.output_dir_input.setText(os.getcwd())
         self.done_summary_label.clear()
         self.done_files_label.clear()
-        self.status_bar.showMessage("Ready. Load a report to begin.")
+        self._set_status_message("Ready. Load a report to begin.")
         self._go_to_step(1)
         self._update_preview_panel()
         self._update_selection_ui()
@@ -876,7 +960,7 @@ class ArchiScraperApp(QMainWindow):
         self.selected_view_ids = {view["view_id"] for view in self.available_views}
         self._update_review_summary()
         self._build_review_list()
-        self.status_bar.showMessage("Step 2 of 4 — Review")
+        self._set_status_message("Step 2 of 4 — Review")
         self._go_to_step(2)
         self._set_review_splitter_sizes()
 
@@ -889,18 +973,18 @@ class ArchiScraperApp(QMainWindow):
         self.retry_export_button.setVisible(not success)
         if success:
             self.done_header_label.setStyleSheet(
-                "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 12px; "
+                "background-color: #e6f4ea; color: #1e6b3a; padding: 4px 8px; font-size: 14px; line-height: 1.2; "
                 "border-radius: 6px; border-left: 3px solid #34a853;"
             )
         else:
             self.done_header_label.setStyleSheet(
-                "background-color: #fce8e6; color: #b3261e; padding: 8px 12px; "
+                "background-color: #fce8e6; color: #b3261e; padding: 4px 8px; font-size: 14px; line-height: 1.2; "
                 "border-radius: 6px; border-left: 3px solid #d93025;"
             )
         self._go_to_step(4)
         if success:
             self.done_stepper.update_step(5)  # All 4 steps show checkmarks
-            self.status_bar.showMessage("Export completed successfully.")
+            self._set_status_message("Export completed successfully.")
 
     def _toggle_select_all_views(self):
         should_select_all = len(self.selected_view_ids) != len(self.available_views)
@@ -973,7 +1057,6 @@ class ArchiScraperApp(QMainWindow):
             self.preview_stack.setCurrentWidget(self.preview_placeholder)
             return
         preview_html = view_data.get("preview_html")
-        preview_url = view_data.get("preview_url", "")
         if preview_html:
             self.review_preview.setHtml(preview_html)
         else:
@@ -983,7 +1066,6 @@ class ArchiScraperApp(QMainWindow):
 
     def _generate_view_summary(self, view_data: dict) -> str:
         name = view_data.get("view_name", view_data.get("view_id", "Unknown"))
-        view_id = view_data.get("view_id", "")
         elements = view_data.get("elements", {})
         relationships = view_data.get("relationships", [])
         content = ""
@@ -1006,7 +1088,6 @@ class ArchiScraperApp(QMainWindow):
             content += "Elements will be included in the exported XML/JSON.</small></p>"
         return f"""<html><body style='margin:16px;color:#222'>
             <h2 style='margin:0 0 2px 0'>{name}</h2>
-            <p style='color:#999;font-size:small;margin:0 0 12px 0'>{view_id}</p>
             <p style='color:#666;margin:0 0 12px 0'>{len(elements)} elements &middot; {len(relationships)} relationships</p>
             {content}
         </body></html>"""
@@ -1054,7 +1135,7 @@ class ArchiScraperApp(QMainWindow):
     @pyqtSlot(str)
     def _on_model_url_found(self, model_url):
         self.model_url = model_url
-        self.status_bar.showMessage(f"Fetching model data from: {model_url}...")
+        self._set_status_message(f"Fetching model data from: {model_url}...")
 
         if not self.model_data.load_from_url(
             model_url,
@@ -1064,7 +1145,7 @@ class ArchiScraperApp(QMainWindow):
         ):
             self._hide_progress()
             QMessageBox.warning(self, "Error", "Failed to load model.html from the report.")
-            self.status_bar.showMessage("Failed to load model.html.")
+            self._set_status_message("Failed to load model.html.")
             return
 
         try:
@@ -1072,7 +1153,7 @@ class ArchiScraperApp(QMainWindow):
         except Exception as exc:
             self._hide_progress()
             QMessageBox.critical(self, "Error", f"Failed to load report views:\n{exc}")
-            self.status_bar.showMessage("Failed to load report views.")
+            self._set_status_message("Failed to load report views.")
             return
 
         self._hide_progress()
@@ -1161,7 +1242,7 @@ class ArchiScraperApp(QMainWindow):
         self._hide_progress()
         if not self.available_views:
             QMessageBox.warning(self, "Error", "No local views could be parsed from the selected files.")
-            self.status_bar.showMessage("No local views loaded.")
+            self._set_status_message("No local views loaded.")
             return
 
         self._enter_review_step()
@@ -1281,7 +1362,7 @@ class ArchiScraperApp(QMainWindow):
         if markdown_dir:
             total_steps += 1
 
-        self.status_bar.showMessage("Generating export...")
+        self._set_status_message("Generating export...")
         self._show_progress(total_steps)
 
         try:
@@ -1343,11 +1424,11 @@ class ArchiScraperApp(QMainWindow):
                     temp_xml.unlink()
 
             summary, files_text = self._summarize_export()
-            self.status_bar.showMessage("Export completed successfully.")
+            self._set_status_message("Export completed successfully.")
             self._enter_done_step(True, summary, files_text)
         except Exception as exc:
             self.last_export_error = str(exc)
-            self.status_bar.showMessage("Export failed.")
+            self._set_status_message("Export failed.")
             self._enter_done_step(False, f"{exc}", "Use Retry Export to try again.")
         finally:
             self._hide_progress()
