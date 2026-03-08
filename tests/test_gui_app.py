@@ -41,6 +41,10 @@ if HAS_PYQT6:
         def setUrl(self, url):
             self._url = url
 
+        def setHtml(self, html, base_url=None):
+            self._html = html
+            self._url = base_url
+
         def page(self):
             return self._page
 
@@ -90,12 +94,14 @@ class TestWizardGui(unittest.TestCase):
                     "view_name": "Application Overview",
                     "elements": {"e1": {}},
                     "preview_url": "https://example.test/views/view-1.html",
+                    "preview_html": "<html><body><h1>Application Overview</h1></body></html>",
                 },
                 {
                     "view_id": "view-2",
                     "view_name": "Technology Landscape",
                     "elements": {"e1": {}, "e2": {}},
                     "preview_url": "https://example.test/views/view-2.html",
+                    "preview_html": "<html><body><h1>Technology Landscape</h1></body></html>",
                 },
             ]
 
@@ -122,11 +128,7 @@ class TestWizardGui(unittest.TestCase):
             self.assertEqual(first_widget.toolTip(), "Application Overview - 1 elements")
             self.assertEqual(first_widget.name_label.toolTip(), "Application Overview - 1 elements")
 
-            # No item auto-selected → placeholder shown initially
-            self.assertEqual(window.preview_stack.currentWidget(), window.preview_placeholder)
-
-            # Simulate user clicking first item
-            window.view_list.setCurrentRow(0)
+            # First item auto-selected → preview shown immediately
             self.assertEqual(window.preview_stack.currentWidget(), window.review_preview)
             self.assertEqual(window.review_preview._url.toString(), "https://example.test/views/view-1.html")
 

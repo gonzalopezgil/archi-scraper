@@ -167,6 +167,10 @@ class ReviewListItemWidget(QWidget):
         self.name_label.setToolTip(tooltip)
         self.count_label.setToolTip(tooltip)
 
+        # Labels pass mouse events to parent so clicks anywhere select the row
+        self.name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.count_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
     def mousePressEvent(self, event):
         self.clicked.emit()
         super().mousePressEvent(event)
@@ -838,7 +842,10 @@ class ArchiScraperApp(QMainWindow):
             widget = ReviewListItemWidget(name, count, self.view_list)
             widget.checkbox.setChecked(view["view_id"] in self.selected_view_ids)
             widget.checkbox.toggled.connect(
-                lambda checked, view_id=view["view_id"]: self._on_view_checkbox_toggled(view_id, checked)
+                lambda checked, view_id=view["view_id"], bound_item=item: (
+                    self._on_view_checkbox_toggled(view_id, checked),
+                    self._on_view_row_clicked(bound_item),
+                )
             )
             widget.clicked.connect(
                 lambda bound_item=item: self._on_view_row_clicked(bound_item)
@@ -846,7 +853,9 @@ class ArchiScraperApp(QMainWindow):
             item.setSizeHint(widget.sizeHint())
             self.view_list.setItemWidget(item, widget)
         self.view_list.blockSignals(False)
-        # Don't auto-select row 0 — show placeholder until user clicks
+        # Auto-select first item to show preview immediately
+        if self.view_list.count() > 0:
+            self.view_list.setCurrentRow(0)
         self._filter_review_list(self.review_filter_input.text())
         self._update_selection_ui()
         self._update_preview_panel()
@@ -953,16 +962,56 @@ class ArchiScraperApp(QMainWindow):
             return
         view_id = item.data(Qt.ItemDataRole.UserRole)
         view_data = next((view for view in self.available_views if view["view_id"] == view_id), None)
-        preview_html = (view_data or {}).get("preview_html")
-        preview_url = (view_data or {}).get("preview_url", "")
-        if not preview_html and not preview_url:
+        if not view_data:
             self.preview_stack.setCurrentWidget(self.preview_placeholder)
             return
+        preview_html = view_data.get("preview_html")
+        preview_url = view_data.get("preview_url", "")
         if preview_html:
             self.review_preview.setHtml(preview_html, QUrl(preview_url))
         else:
-            self.review_preview.setUrl(QUrl(preview_url))
+            # Generate metadata preview when raw HTML unavailable
+            self.review_preview.setHtml(self._generate_view_summary(view_data))
         self.preview_stack.setCurrentWidget(self.review_preview)
+
+    def _generate_view_summary(self, view_data: dict) -> str:
+        name = view_data.get("view_name", view_data.get("view_id", "Unknown"))
+        view_id = view_data.get("view_id", "")
+        elements = view_data.get("elements", {})
+        relationships = view_data.get("relationships", [])
+        content = ""
+        if elements:
+            rows = ""
+            for eid, info in list(elements.items())[:50]:
+                etype = info.get("type", "Unknown") if isinstance(info, dict) else "Element"
+                ename = info.get("name", eid) if isinstance(info, dict) else str(info)
+                rows += f"<tr><td style='padding:8px 12px;border-bottom:1px solid #eee'>{ename}</td>"
+                rows += f"<td style='padding:8px 12px;border-bottom:1px solid #eee;color:#666'>{etype}</td></tr>"
+            if len(elements) > 50:
+                rows += f"<tr><td colspan='2' style='padding:8px 12px;color:#999'>... and {len(elements) - 50} more</td></tr>"
+            content = f"<table><tr><th>Element</th><th>Type</th></tr>{rows}</table>"
+        else:
+            content = """<div class="empty">
+                <p>Element details not available for this view.</p>
+                <p style="font-size:12px;color:#999">The source report serves view content dynamically.<br>
+                Elements will be included in the exported XML/JSON.</p>
+            </div>"""
+        return f"""<!DOCTYPE html><html><head><style>
+            body {{ font-family: -apple-system, sans-serif; margin: 24px; color: #222; background: #fafafa; }}
+            h2 {{ font-size: 22px; margin: 0 0 4px 0; color: #222; }}
+            .vid {{ color: #999; font-size: 11px; font-family: monospace; margin-bottom: 16px; }}
+            .stats {{ color: #666; font-size: 13px; margin-bottom: 16px; }}
+            .empty {{ background: white; border-radius: 8px; padding: 24px; text-align: center; color: #666;
+                      box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+            table {{ border-collapse: collapse; width: 100%; background: white; border-radius: 8px;
+                     overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+            th {{ background: #e8601c; color: white; padding: 10px 12px; text-align: left; font-size: 13px; }}
+        </style></head><body>
+            <h2>{name}</h2>
+            <div class="vid">{view_id}</div>
+            <div class="stats">{len(elements)} elements &middot; {len(relationships)} relationships</div>
+            {content}
+        </body></html>"""
 
     def _set_review_splitter_sizes(self):
         total_width = max(self.review_splitter.size().width(), 1000)
@@ -1354,6 +1403,11 @@ def main():
 
     window = ArchiScraperApp()
     window.show()
+
+    # Auto-load URL from command line argument
+    if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
+        window.url_input.setText(sys.argv[1])
+        window._on_go_clicked()
 
     sys.exit(app.exec())
 
