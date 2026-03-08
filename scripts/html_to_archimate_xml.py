@@ -7,6 +7,7 @@ Supports local HTML files (--model + --views) and remote HTML reports via --url.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import sys
@@ -238,6 +239,12 @@ Example usage:
         help="Output XML filename (default: master_model.xml)",
     )
     parser.add_argument(
+        "--format",
+        choices=["xml", "json", "both"],
+        default="xml",
+        help="Output format: xml, json, or both (default: xml)",
+    )
+    parser.add_argument(
         "--connections",
         action="store_true",
         help="Include connection elements inside views (default: off)",
@@ -387,7 +394,17 @@ Example usage:
 
     generator = ArchiMateXMLGenerator(model_data)
     xml_root = generator.create_merged_xml(views_data, include_connections=args.connections)
-    ArchiMateXMLGenerator.save_xml(xml_root, str(output_path))
+
+    json_output_path = output_path.with_suffix(".json")
+    if args.format in ("xml", "both"):
+        ArchiMateXMLGenerator.save_xml(xml_root, str(output_path))
+    if args.format in ("json", "both"):
+        json_data = generator.export_json(xml_root)
+        json_output_path.write_text(
+            json.dumps(json_data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info("  Saved: %s", json_output_path)
 
     if args.markdown:
         markdown_path = output_path.with_suffix(".md")
@@ -404,7 +421,12 @@ Example usage:
             print("\nValidation passed: no warnings.")
 
     print("\n" + "=" * 60)
-    print(f"SUCCESS: Created {output_path}")
+    if args.format == "json":
+        print(f"SUCCESS: Created {json_output_path}")
+    elif args.format == "both":
+        print(f"SUCCESS: Created {output_path} and {json_output_path}")
+    else:
+        print(f"SUCCESS: Created {output_path}")
     print("=" * 60)
     print(f"  Views: {len(views_data)}")
     print("\nImport into Archi: File → Import → Model from Open Exchange File")

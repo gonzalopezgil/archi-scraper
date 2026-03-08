@@ -1082,6 +1082,86 @@ class ArchiMateXMLGenerator:
         return warnings
 
     @staticmethod
+    def export_json(root: ET.Element) -> Dict[str, object]:
+        """Export the ArchiMate XML tree into a JSON-ready dict."""
+        def local_name(tag: str) -> str:
+            return tag.split('}', 1)[-1] if '}' in tag else tag
+
+        def get_xsi_type(elem: ET.Element) -> str:
+            return elem.get("xsi:type") or elem.get(f"{{{XSI_NS}}}type") or ""
+
+        def find_child_text(elem: ET.Element, child_name: str) -> str:
+            for child in elem:
+                if local_name(child.tag) == child_name:
+                    return child.text or ""
+            return ""
+
+        model_name = ""
+        for child in root:
+            if local_name(child.tag) == "name":
+                model_name = child.text or ""
+                break
+
+        elements: List[Dict[str, str]] = []
+        for elem in root.iter():
+            if local_name(elem.tag) == "element":
+                elements.append({
+                    "id": elem.get("identifier") or "",
+                    "type": get_xsi_type(elem),
+                    "name": find_child_text(elem, "name"),
+                    "documentation": find_child_text(elem, "documentation"),
+                })
+
+        relationships: List[Dict[str, str]] = []
+        for rel in root.iter():
+            if local_name(rel.tag) == "relationship":
+                relationships.append({
+                    "id": rel.get("identifier") or "",
+                    "type": get_xsi_type(rel),
+                    "source": rel.get("source") or "",
+                    "target": rel.get("target") or "",
+                })
+
+        views: List[Dict[str, object]] = []
+        for view in root.iter():
+            if local_name(view.tag) != "view":
+                continue
+            view_nodes: List[Dict[str, str]] = []
+            view_connections: List[Dict[str, str]] = []
+            for child in view:
+                child_name = local_name(child.tag)
+                if child_name == "node":
+                    view_nodes.append({
+                        "id": child.get("identifier") or "",
+                        "element": child.get("elementRef") or "",
+                        "x": child.get("x") or "",
+                        "y": child.get("y") or "",
+                        "w": child.get("w") or "",
+                        "h": child.get("h") or "",
+                    })
+                elif child_name == "connection":
+                    view_connections.append({
+                        "id": child.get("identifier") or "",
+                        "relationship": child.get("relationshipRef") or "",
+                        "source": child.get("source") or "",
+                        "target": child.get("target") or "",
+                    })
+
+            views.append({
+                "id": view.get("identifier") or "",
+                "name": find_child_text(view, "name"),
+                "nodes": view_nodes,
+                "connections": view_connections,
+            })
+
+        return {
+            "name": model_name,
+            "elements": elements,
+            "relationships": relationships,
+            "views": views,
+        }
+
+    @staticmethod
     def prettify_xml(elem: ET.Element) -> str:
         """Pretty-print an XML element."""
         rough = ET.tostring(elem, encoding='unicode')
