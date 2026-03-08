@@ -7,10 +7,11 @@ Supports local HTML files (--model + --views) and remote HTML reports via --url.
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
@@ -24,6 +25,7 @@ from archiscraper_core import (
 )
 
 DEFAULT_USER_AGENT = get_random_user_agent()
+logger = logging.getLogger(__name__)
 
 
 def ensure_url_scheme(url: str) -> str:
@@ -46,9 +48,17 @@ def build_base_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}{path}"
 
 
-def discover_model_url(index_url: str, headers: Dict[str, str], timeout: int = 30) -> Tuple[str, str, str]:
+def discover_model_url(
+    index_url: str,
+    headers: Dict[str, str],
+    timeout: int = 30,
+    session: Optional[requests.Session] = None,
+) -> Tuple[str, str, str]:
     """Download index.html and discover the model.html URL using the GUID pattern."""
-    response = requests.get(index_url, headers=headers, timeout=timeout)
+    if session is None:
+        response = requests.get(index_url, headers=headers, timeout=timeout)
+    else:
+        response = session.get(index_url, headers=headers, timeout=timeout)
     response.raise_for_status()
 
     match = re.search(r'(id-[A-Fa-f0-9-]+)/elements/model\.html', response.text)
@@ -62,9 +72,17 @@ def discover_model_url(index_url: str, headers: Dict[str, str], timeout: int = 3
     return base_url, guid, model_url
 
 
-def fetch_html(url: str, headers: Dict[str, str], timeout: int = 30) -> str:
+def fetch_html(
+    url: str,
+    headers: Dict[str, str],
+    timeout: int = 30,
+    session: Optional[requests.Session] = None,
+) -> str:
     """Fetch HTML content from a URL."""
-    response = requests.get(url, headers=headers, timeout=timeout)
+    if session is None:
+        response = requests.get(url, headers=headers, timeout=timeout)
+    else:
+        response = session.get(url, headers=headers, timeout=timeout)
     response.raise_for_status()
     return response.text
 
@@ -72,13 +90,13 @@ def fetch_html(url: str, headers: Dict[str, str], timeout: int = 30) -> str:
 def list_views(model_data: ModelDataParser) -> None:
     """Print all views available in the model."""
     if not model_data.views:
-        print("No views found in model.html.")
+        logger.warning("No views found in model.html.")
         return
 
-    print(f"Found {len(model_data.views)} views:")
+    logger.info("Found %d views:", len(model_data.views))
     for view_id, view in model_data.views.items():
         name = view.get('name', 'Unnamed View')
-        print(f"  {view_id}  {name}")
+        logger.info("  %s  %s", view_id, name)
 
 
 def collect_view_data_from_urls(
@@ -88,6 +106,7 @@ def collect_view_data_from_urls(
     view_name_map: Dict[str, str],
     headers: Dict[str, str],
     timeout: int = 30,
+    session: Optional[requests.Session] = None,
 ) -> List[Dict[str, object]]:
     """Download and parse multiple view HTML files from a remote report."""
     views_data: List[Dict[str, object]] = []
@@ -95,18 +114,18 @@ def collect_view_data_from_urls(
 
     for index, view_id in enumerate(view_ids, start=1):
         view_name = view_name_map.get(view_id, view_id)
-        print(f"Downloading view {index}/{total}: {view_name}...")
+        logger.info("Downloading view %d/%d: %s...", index, total, view_name)
 
         view_url = f"{base_url}{guid}/views/{view_id}.html"
         try:
-            html_content = fetch_html(view_url, headers=headers, timeout=timeout)
+            html_content = fetch_html(view_url, headers=headers, timeout=timeout, session=session)
         except requests.RequestException as exc:
-            print(f"  Warning: Failed to download {view_id} ({exc}). Skipping.")
+            logger.warning("  Warning: Failed to download %s (%s). Skipping.", view_id, exc)
             continue
 
         view_data = ViewParser.parse(html_content)
         if not view_data:
-            print(f"  Warning: No coordinates found for {view_id}. Skipping.")
+            logger.warning("  Warning: No coordinates found for %s. Skipping.", view_id)
             continue
 
         views_data.append(view_data)
@@ -120,23 +139,23 @@ def collect_view_data_from_files(view_files: List[Path]) -> List[Dict[str, objec
 
     for html_path in view_files:
         if not html_path.exists():
-            print(f"Skipping (not found): {html_path}")
+            logger.warning("Skipping (not found): %s", html_path)
             continue
 
-        print(f"\nProcessing: {html_path}")
+        logger.info("\nProcessing: %s", html_path)
         with open(html_path, 'r', encoding='utf-8') as handle:
             html_content = handle.read()
 
         view_data = ViewParser.parse(html_content)
         if not view_data:
-            print("  Warning: No coordinates found. Skipping.")
+            logger.warning("  Warning: No coordinates found. Skipping.")
             continue
 
-        print(f"  View: {view_data['view_name']}")
-        print(f"  View ID: {view_data['view_id']}")
-        print(f"  Elements: {len(view_data['elements'])}")
-        print(f"  Relationships: {len(view_data['relationships'])}")
-        print(f"  Coordinates: {len(view_data['coordinates'])}")
+        logger.info("  View: %s", view_data['view_name'])
+        logger.info("  View ID: %s", view_data['view_id'])
+        logger.info("  Elements: %d", len(view_data['elements']))
+        logger.info("  Relationships: %d", len(view_data['relationships']))
+        logger.info("  Coordinates: %d", len(view_data['coordinates']))
 
         views_data.append(view_data)
 
@@ -236,12 +255,20 @@ Example usage:
         type=str,
         help="Directory for downloaded images (default: images/ relative to output)",
     )
+    parser.add_argument(
+        "--timeout",
+        default=30,
+        type=int,
+        help="HTTP timeout in seconds (default: 30)",
+    )
 
     args = parser.parse_args()
     validate_args(parser, args)
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     output_path = Path(args.output)
     model_data = ModelDataParser()
+    session = requests.Session()
 
     if args.url:
         url = ensure_url_scheme(args.url.strip())
@@ -253,27 +280,32 @@ Example usage:
         print(f"  URL: {url}")
 
         try:
-            base_url, guid, model_url = discover_model_url(url, headers=headers)
+            base_url, guid, model_url = discover_model_url(
+                url,
+                headers=headers,
+                timeout=args.timeout,
+                session=session,
+            )
         except requests.RequestException as exc:
-            print(f"ERROR: Failed to fetch index.html ({exc})")
+            logger.error("ERROR: Failed to fetch index.html (%s)", exc)
             sys.exit(1)
         except ValueError as exc:
-            print(f"ERROR: {exc}")
+            logger.error("ERROR: %s", exc)
             sys.exit(1)
 
         print(f"  Base URL: {base_url}")
         print(f"  GUID: {guid}")
         print(f"  Model URL: {model_url}")
 
-        if not model_data.load_from_url(model_url, headers=headers):
-            print("WARNING: Failed to load model.html; documentation and folders may be missing.")
+        if not model_data.load_from_url(model_url, headers=headers, timeout=args.timeout, session=session):
+            logger.warning("WARNING: Failed to load model.html; documentation and folders may be missing.")
 
         if args.list_views:
             list_views(model_data)
             return
 
         if not model_data.views:
-            print("ERROR: No views found in model.html. Exiting.")
+            logger.error("ERROR: No views found in model.html. Exiting.")
             sys.exit(1)
 
         if args.download_all:
@@ -283,11 +315,15 @@ Example usage:
 
         missing_ids = [view_id for view_id in view_ids if view_id not in model_data.views]
         if missing_ids:
-            print(f"WARNING: {len(missing_ids)} view IDs not found in model.html: {missing_ids}")
+            logger.warning(
+                "WARNING: %d view IDs not found in model.html: %s",
+                len(missing_ids),
+                missing_ids,
+            )
 
         view_ids = [view_id for view_id in view_ids if view_id in model_data.views]
         if not view_ids:
-            print("ERROR: No valid view IDs selected. Exiting.")
+            logger.error("ERROR: No valid view IDs selected. Exiting.")
             sys.exit(1)
 
         view_name_map = {vid: data.get('name', vid) for vid, data in model_data.views.items()}
@@ -297,6 +333,8 @@ Example usage:
             view_ids,
             view_name_map,
             headers,
+            timeout=args.timeout,
+            session=session,
         )
     else:
         model_path = Path(args.model)
@@ -310,18 +348,18 @@ Example usage:
         print(f"  Output: {output_path}")
 
         if not model_data.load_from_file(str(model_path)):
-            print("WARNING: Failed to load model.html; documentation and folders may be missing.")
+            logger.warning("WARNING: Failed to load model.html; documentation and folders may be missing.")
 
         if args.images:
-            print("WARNING: --images is only supported with --url. Skipping image download.")
+            logger.warning("WARNING: --images is only supported with --url. Skipping image download.")
 
         views_data = collect_view_data_from_files(view_files)
 
-    print("\n--- Summary ---")
-    print(f"Total views: {len(views_data)}")
+    logger.info("\n--- Summary ---")
+    logger.info("Total views: %d", len(views_data))
 
     if not views_data:
-        print("\nERROR: No valid views found. Exiting.")
+        logger.error("\nERROR: No valid views found. Exiting.")
         return
 
     if args.url and args.images:
@@ -334,8 +372,10 @@ Example usage:
             views=views_data,
             output_dir=str(images_dir),
             user_agent=args.user_agent,
+            timeout=args.timeout,
+            session=session,
         )
-        print(f"Images downloaded: {downloaded} (skipped: {skipped})")
+        logger.info("Images downloaded: %d (skipped: %d)", downloaded, skipped)
 
     generator = ArchiMateXMLGenerator(model_data)
     xml_root = generator.create_merged_xml(views_data, include_connections=args.connections)
