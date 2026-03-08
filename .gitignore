@@ -27,3 +27,5 @@ dcra_master.xml
 FINAL_VERIFICATION.md
 REVIEW.md
 *.egg-info/
+master_model.xml
+master_model.json
