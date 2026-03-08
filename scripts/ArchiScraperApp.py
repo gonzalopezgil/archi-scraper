@@ -755,6 +755,8 @@ class ArchiScraperApp(QMainWindow):
         self.review_stepper.update_step(2 if step >= 2 else 1)
         self.options_stepper.update_step(3 if step >= 3 else 2)
         self.done_stepper.update_step(4 if step >= 4 else 3)
+        step_names = {1: "Source", 2: "Review", 3: "Options", 4: "Done"}
+        self.status_bar.showMessage(f"Step {step} of 4 — {step_names.get(step, '')}")
 
     def _get_user_agent(self) -> str:
         user_agent = self.user_agent_input.text().strip()
@@ -896,6 +898,9 @@ class ArchiScraperApp(QMainWindow):
                 "border-radius: 6px; border-left: 3px solid #d93025;"
             )
         self._go_to_step(4)
+        if success:
+            self.done_stepper.update_step(5)  # All 4 steps show checkmarks
+            self.status_bar.showMessage("Export completed successfully.")
 
     def _toggle_select_all_views(self):
         should_select_all = len(self.selected_view_ids) != len(self.available_views)
@@ -1218,12 +1223,24 @@ class ArchiScraperApp(QMainWindow):
             f"Elements: {total_elements}\n"
             f"Relationships: {total_relationships}"
         )
-        files_text = "<br>".join(
-            f"<span style='color:#444; font-weight:600;'>{Path(path).name}</span> "
-            f"<span style='color:#7a7a7a;'>({Path(path).stat().st_size} bytes)</span>"
-            for path in self.exported_files
-            if Path(path).exists()
-        )
+        seen = set()
+        file_lines = []
+        for path in self.exported_files:
+            if path in seen or not Path(path).exists():
+                continue
+            seen.add(path)
+            size = Path(path).stat().st_size
+            if size >= 1_000_000:
+                human = f"{size / 1_000_000:.2f} MB"
+            elif size >= 1_000:
+                human = f"{size / 1_000:.1f} KB"
+            else:
+                human = f"{size} B"
+            file_lines.append(
+                f"<span style='color:#444; font-weight:600;'>{Path(path).name}</span> "
+                f"<span style='color:#7a7a7a;'>({human})</span>"
+            )
+        files_text = "<br>".join(file_lines)
         return summary, files_text
 
     def _on_export_clicked(self):
