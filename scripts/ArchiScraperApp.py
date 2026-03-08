@@ -14,6 +14,8 @@ Prerequisites:
 import sys
 import os
 import re
+import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -26,7 +28,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
     QListWidget, QLabel, QSplitter, QGroupBox, QListWidgetItem, QCheckBox,
-    QDialog, QDialogButtonBox
+    QDialog, QDialogButtonBox, QProgressBar
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
@@ -257,7 +259,13 @@ class ArchiScraperApp(QMainWindow):
         # === Right side: Batch Panel ===
         batch_widget = QGroupBox("Views to Export (Batch Mode)")
         batch_layout = QVBoxLayout(batch_widget)
-        
+
+        # Progress bar (hidden until needed)
+        self.batch_progress = QProgressBar()
+        self.batch_progress.setVisible(False)
+        self.batch_progress.setTextVisible(True)
+        batch_layout.addWidget(self.batch_progress)
+
         # List of collected views
         self.batch_list = QListWidget()
         self.batch_list.setMinimumWidth(250)
@@ -301,6 +309,28 @@ class ArchiScraperApp(QMainWindow):
         """)
         self.export_batch_button.clicked.connect(self._on_export_batch_clicked)
         batch_layout.addWidget(self.export_batch_button)
+
+        # Export JSON button (batch)
+        self.export_json_button = QPushButton("Export as JSON")
+        self.export_json_button.setFixedHeight(32)
+        self.export_json_button.setStyleSheet("""
+            QPushButton {
+                background-color: #e0e0e0;
+                color: #333333;
+                padding: 6px 10px;
+                border: 1px solid #c0c0c0;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #d5d5d5;
+            }
+            QPushButton:disabled {
+                background-color: #f0f0f0;
+                color: #999999;
+            }
+        """)
+        self.export_json_button.clicked.connect(self._on_export_json_clicked)
+        batch_layout.addWidget(self.export_json_button)
 
         # Connections toggle (applies to single and batch exports)
         self.include_connections_checkbox = QCheckBox("Include connections in views")
@@ -354,6 +384,23 @@ class ArchiScraperApp(QMainWindow):
         self.markdown_button = QPushButton("Convert XML → Markdown")
         self.markdown_button.clicked.connect(self._on_convert_markdown_clicked)
         batch_layout.addWidget(self.markdown_button)
+
+        # XML validation utility
+        self.validate_xml_button = QPushButton("Validate XML")
+        self.validate_xml_button.setStyleSheet("""
+            QPushButton {
+                background-color: #e0e0e0;
+                color: #333333;
+                padding: 6px 10px;
+                border: 1px solid #c0c0c0;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #d5d5d5;
+            }
+        """)
+        self.validate_xml_button.clicked.connect(self._on_validate_xml_clicked)
+        batch_layout.addWidget(self.validate_xml_button)
         
         splitter.addWidget(batch_widget)
         
@@ -423,35 +470,44 @@ class ArchiScraperApp(QMainWindow):
         success_count = 0
         fail_count = 0
         total_views = len(view_ids)
+        if total_views:
+            self._show_progress(total_views)
 
-        for i, view_id in enumerate(view_ids, 1):
-            view_info = self.model_data.views.get(view_id, {})
-            view_name = view_info.get('name', view_id)
-            self.status_bar.showMessage(f"Processing view {i}/{total_views}: {view_name}...")
-            QApplication.processEvents()
+        try:
+            for i, view_id in enumerate(view_ids, 1):
+                view_info = self.model_data.views.get(view_id, {})
+                view_name = view_info.get('name', view_id)
+                self.status_bar.showMessage(f"Processing view {i}/{total_views}: {view_name}...")
+                QApplication.processEvents()
 
-            view_url = f"{views_base_url}{view_id}.html"
-            try:
-                response = self.session.get(
-                    view_url,
-                    headers={"User-Agent": self._get_user_agent()},
-                    timeout=self._get_timeout(),
-                )
-                response.raise_for_status()
-                view_html = response.text
-                view_data = ViewParser.parse(view_html)
-                if view_data:
-                    if self._add_view_to_batch(view_data):
-                        success_count += 1
-                        print(f"  [{i}/{total_views}] ✓ {view_name}")
+                view_url = f"{views_base_url}{view_id}.html"
+                try:
+                    response = self.session.get(
+                        view_url,
+                        headers={"User-Agent": self._get_user_agent()},
+                        timeout=self._get_timeout(),
+                    )
+                    response.raise_for_status()
+                    view_html = response.text
+                    view_data = ViewParser.parse(view_html)
+                    if view_data:
+                        if self._add_view_to_batch(view_data):
+                            success_count += 1
+                            print(f"  [{i}/{total_views}] ✓ {view_name}")
+                        else:
+                            print(f"  [{i}/{total_views}] ↺ {view_name} (already in batch)")
                     else:
-                        print(f"  [{i}/{total_views}] ↺ {view_name} (already in batch)")
-                else:
+                        fail_count += 1
+                        print(f"  [{i}/{total_views}] ✗ {view_name} - No coordinates found")
+                except Exception as exc:
                     fail_count += 1
-                    print(f"  [{i}/{total_views}] ✗ {view_name} - No coordinates found")
-            except Exception as exc:
-                fail_count += 1
-                print(f"  [{i}/{total_views}] ✗ {view_name} - Error: {exc}")
+                    print(f"  [{i}/{total_views}] ✗ {view_name} - Error: {exc}")
+
+                if total_views:
+                    self._update_progress(i)
+        finally:
+            if total_views:
+                self._hide_progress()
 
         self._update_batch_ui()
         return success_count, fail_count
@@ -462,14 +518,34 @@ class ArchiScraperApp(QMainWindow):
         if count == 0:
             self.batch_info_label.setText("No views added yet")
             self.export_batch_button.setEnabled(False)
+            self.export_json_button.setEnabled(False)
             self.remove_selected_button.setEnabled(False)
             self.clear_batch_button.setEnabled(False)
         else:
             total_elements = sum(len(v['elements']) for v in self.batch_views)
             self.batch_info_label.setText(f"{count} view(s), ~{total_elements} elements")
             self.export_batch_button.setEnabled(True)
+            self.export_json_button.setEnabled(True)
             self.remove_selected_button.setEnabled(True)
             self.clear_batch_button.setEnabled(True)
+
+    def _show_progress(self, total_steps: int) -> None:
+        """Show and initialize the batch progress bar."""
+        self.batch_progress.setRange(0, max(total_steps, 1))
+        self.batch_progress.setValue(0)
+        self.batch_progress.setFormat("%p%")
+        self.batch_progress.setVisible(True)
+        QApplication.processEvents()
+
+    def _update_progress(self, value: int) -> None:
+        """Update the batch progress bar and keep UI responsive."""
+        self.batch_progress.setValue(value)
+        QApplication.processEvents()
+
+    def _hide_progress(self) -> None:
+        """Hide the batch progress bar."""
+        self.batch_progress.setVisible(False)
+        self.batch_progress.setValue(0)
     
     def _on_go_clicked(self):
         """Handle Go button click."""
@@ -808,7 +884,9 @@ class ArchiScraperApp(QMainWindow):
                 return
         
         self.status_bar.showMessage("Generating master model XML...")
-        
+        total_steps = 3 if self.download_images_checkbox.isChecked() else 2
+        self._show_progress(total_steps)
+
         try:
             # Generate merged XML using the batch views
             generator = ArchiMateXMLGenerator(self.model_data)
@@ -816,6 +894,7 @@ class ArchiScraperApp(QMainWindow):
                 self.batch_views,
                 include_connections=self.include_connections_checkbox.isChecked(),
             )
+            self._update_progress(1)
             
             # Ask user where to save
             default_name = "master_model.xml"
@@ -829,6 +908,7 @@ class ArchiScraperApp(QMainWindow):
             if file_path:
                 ArchiMateXMLGenerator.save_xml(xml_root, file_path)
                 self.status_bar.showMessage(f"✓ Master model saved: {file_path}")
+                self._update_progress(2)
 
                 downloaded_images = 0
                 skipped_images = 0
@@ -858,6 +938,7 @@ class ArchiScraperApp(QMainWindow):
                         self.status_bar.showMessage(
                             f"✓ Downloaded {downloaded_images} images (skipped {skipped_images})."
                         )
+                    self._update_progress(3)
 
                 # Calculate totals
                 total_elements = len(set(
@@ -885,7 +966,107 @@ class ArchiScraperApp(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to generate master model:\n{e}")
             import traceback
             traceback.print_exc()
-    
+        finally:
+            self._hide_progress()
+
+    def _on_export_json_clicked(self):
+        """Export all batch views as a single master model JSON."""
+        if not self.batch_views:
+            QMessageBox.warning(self, "Error", "No views in batch. Add views first.")
+            return
+
+        if not self.model_data.loaded:
+            reply = QMessageBox.question(
+                self, "Warning",
+                "Model data is not loaded. Documentation and folder structure will be missing.\nContinue anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
+
+        self.status_bar.showMessage("Generating master model JSON...")
+        self._show_progress(2)
+
+        try:
+            generator = ArchiMateXMLGenerator(self.model_data)
+            xml_root = generator.create_merged_xml(
+                self.batch_views,
+                include_connections=self.include_connections_checkbox.isChecked(),
+            )
+            self._update_progress(1)
+
+            default_name = "master_model.json"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Master Model JSON",
+                default_name,
+                "JSON Files (*.json);;All Files (*)"
+            )
+
+            if file_path:
+                json_data = generator.export_json(xml_root)
+                with open(file_path, 'w', encoding='utf-8') as handle:
+                    handle.write(json.dumps(json_data, indent=2, ensure_ascii=False))
+
+                self.status_bar.showMessage(f"✓ Master model JSON saved: {file_path}")
+                self._update_progress(2)
+
+                total_elements = len(set(
+                    elem_id for v in self.batch_views
+                    for elem_id in v['elements'].keys()
+                ))
+                total_relationships = len(set(
+                    rel['id'] for v in self.batch_views
+                    for rel in v['relationships']
+                ))
+
+                QMessageBox.information(
+                    self, "Success",
+                    f"Master Model JSON saved to:\n{file_path}\n\n"
+                    f"Views: {len(self.batch_views)}\n"
+                    f"Unique Elements: {total_elements}\n"
+                    f"Unique Relationships: {total_relationships}"
+                )
+            else:
+                self.status_bar.showMessage("Save cancelled.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to generate master model JSON:\n{e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self._hide_progress()
+
+    def _on_validate_xml_clicked(self):
+        """Validate an ArchiMate XML file and show any warnings."""
+        xml_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select ArchiMate XML",
+            "",
+            "ArchiMate XML Files (*.xml);;All Files (*)"
+        )
+        if not xml_path:
+            return
+
+        try:
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+            warnings = ArchiMateXMLGenerator.validate_xml(root)
+            if warnings:
+                QMessageBox.information(
+                    self,
+                    "XML Validation Warnings",
+                    "Warnings:\n" + "\n".join(warnings)
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "XML Validation",
+                    "XML is valid - no issues found"
+                )
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to validate XML:\n{exc}")
+
     def _on_download_all_clicked(self):
         """Download ALL views from the model and export as master XML."""
         # Check prerequisites
