@@ -60,7 +60,7 @@ venv\Scripts\activate  # Windows
 # source venv/bin/activate  # Linux/Mac
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 
 # Run the GUI application
 python scripts/ArchiScraperApp.py
@@ -116,6 +116,15 @@ Relationship directions are represented with arrows:
 
 ---
 
+## Development
+
+```bash
+pip install -e .[dev]
+pytest
+```
+
+---
+
 ## Examples
 
 ```bash
@@ -159,6 +168,12 @@ html_to_archimate_xml.py (CLI) ----> archiscraper_to_markdown.py (Docs)
 - Some complex nested element relationships may need manual adjustment after import.
 - Connection bendpoints are not preserved; connections are hidden in views by default (Clean Views).
 - View images are only available when using `--url` + `--images`.
+
+---
+
+## Status/Roadmap
+
+Actively maintained. Recent additions: User-Agent rotation, image export, XML-to-Markdown converter.
 
 ---
 
