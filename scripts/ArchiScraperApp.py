@@ -135,18 +135,28 @@ class ReviewListItemWidget(QWidget):
 
     def __init__(self, name: str, count: int, parent=None):
         super().__init__(parent)
+        tooltip = f"{name} - {count} elements"
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(10)
 
         self.checkbox = QCheckBox()
-        self.checkbox.setText(name)
         layout.addWidget(self.checkbox)
+
+        self.name_label = QLabel(name)
+        self.name_label.setStyleSheet("color: #222;")
+        layout.addWidget(self.name_label)
 
         self.count_label = QLabel(f"{count} elements")
         self.count_label.setProperty("subtle", True)
+        self.count_label.setStyleSheet("color: #7a7a7a; font-size: 12px;")
         layout.addWidget(self.count_label)
         layout.addStretch(1)
+
+        self.setToolTip(tooltip)
+        self.checkbox.setToolTip(tooltip)
+        self.name_label.setToolTip(tooltip)
+        self.count_label.setToolTip(tooltip)
 
 
 class SettingsDialog(QDialog):
@@ -236,8 +246,13 @@ class ArchiScraperApp(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.setStyleSheet("""
-            QMainWindow, QWidget {
+            QMainWindow {
                 background: #f5f5f5;
+                color: #222;
+                font-size: 13px;
+            }
+            QWidget {
+                background: transparent;
                 color: #222;
                 font-size: 13px;
             }
@@ -245,6 +260,9 @@ class ArchiScraperApp(QMainWindow):
                 background: white;
                 border: 1px solid #e6e6e6;
                 border-radius: 8px;
+            }
+            QLabel {
+                background: transparent;
             }
             QLabel[title="true"] {
                 font-size: 28px;
@@ -290,20 +308,6 @@ class ArchiScraperApp(QMainWindow):
                 border: 1px solid #d7d7d7;
                 border-radius: 8px;
                 padding: 8px 10px;
-            }
-            QListWidget::indicator {
-                width: 16px;
-                height: 16px;
-            }
-            QListWidget::indicator:unchecked {
-                background: white;
-                border: 1px solid #bdbdbd;
-                border-radius: 2px;
-            }
-            QListWidget::indicator:checked {
-                background: palette(highlight);
-                border: 1px solid palette(highlight);
-                border-radius: 2px;
             }
             QProgressBar {
                 background: #ededed;
@@ -461,7 +465,7 @@ class ArchiScraperApp(QMainWindow):
         self.review_header_label = QLabel("Model loaded successfully")
         self.review_header_label.setProperty("header", True)
         self.review_header_label.setStyleSheet(
-            "background: #e6f4ea; padding: 8px; border-radius: 6px; border-left: 3px solid #34a853;"
+            "background-color: #e6f4ea; padding: 8px 12px; border-radius: 6px; border-left: 3px solid #34a853;"
         )
         card_layout.addWidget(self.review_header_label)
 
@@ -506,6 +510,7 @@ class ArchiScraperApp(QMainWindow):
         self.preview_placeholder = QLabel("Select a view to preview")
         self.preview_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_placeholder.setProperty("subtle", True)
+        self.preview_placeholder.setStyleSheet("color: #8a8a8a;")
         self.preview_stack.addWidget(self.preview_placeholder)
 
         self.review_preview = QWebEngineView()
@@ -541,7 +546,7 @@ class ArchiScraperApp(QMainWindow):
         card = self._build_card()
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(12)
+        card_layout.setSpacing(24)
 
         self.options_stepper = StepperWidget()
         card_layout.addWidget(self.options_stepper)
@@ -550,8 +555,14 @@ class ArchiScraperApp(QMainWindow):
         header.setProperty("header", True)
         card_layout.addWidget(header)
 
+        format_section = QWidget()
+        format_section.setStyleSheet("background: transparent;")
+        format_section_layout = QVBoxLayout(format_section)
+        format_section_layout.setContentsMargins(0, 0, 0, 0)
+        format_section_layout.setSpacing(12)
+
         format_label = QLabel("Format")
-        card_layout.addWidget(format_label)
+        format_section_layout.addWidget(format_label)
 
         self.format_group = QButtonGroup(self)
         self.xml_radio = QRadioButton("XML")
@@ -567,15 +578,32 @@ class ArchiScraperApp(QMainWindow):
         format_row.addWidget(self.json_radio)
         format_row.addWidget(self.both_radio)
         format_row.addStretch(1)
-        card_layout.addLayout(format_row)
+        format_section_layout.addLayout(format_row)
+        card_layout.addWidget(format_section)
+
+        options_section = QWidget()
+        options_section.setStyleSheet("background: transparent;")
+        options_section_layout = QVBoxLayout(options_section)
+        options_section_layout.setContentsMargins(0, 0, 0, 0)
+        options_section_layout.setSpacing(12)
+        options_label = QLabel("Extras")
+        options_section_layout.addWidget(options_label)
 
         self.markdown_checkbox = QCheckBox("Also generate Markdown summary")
         self.include_connections_checkbox = QCheckBox("Include connections in views")
         self.download_images_checkbox = QCheckBox("Download diagram images")
-        card_layout.addWidget(self.markdown_checkbox)
-        card_layout.addWidget(self.include_connections_checkbox)
-        card_layout.addWidget(self.download_images_checkbox)
+        options_section_layout.addWidget(self.markdown_checkbox)
+        options_section_layout.addWidget(self.include_connections_checkbox)
+        options_section_layout.addWidget(self.download_images_checkbox)
+        card_layout.addWidget(options_section)
 
+        output_section = QWidget()
+        output_section.setStyleSheet("background: transparent;")
+        output_section_layout = QVBoxLayout(output_section)
+        output_section_layout.setContentsMargins(0, 0, 0, 0)
+        output_section_layout.setSpacing(12)
+        output_label = QLabel("Output")
+        output_section_layout.addWidget(output_label)
         output_grid = QGridLayout()
         output_grid.setHorizontalSpacing(12)
         output_grid.setVerticalSpacing(12)
@@ -591,7 +619,8 @@ class ArchiScraperApp(QMainWindow):
         output_grid.addWidget(QLabel("Output filename"), 1, 0)
         self.output_name_input = QLineEdit("master_model")
         output_grid.addWidget(self.output_name_input, 1, 1, 1, 2)
-        card_layout.addLayout(output_grid)
+        output_section_layout.addLayout(output_grid)
+        card_layout.addWidget(output_section)
 
         nav = QHBoxLayout()
         nav.setSpacing(12)
@@ -600,7 +629,7 @@ class ArchiScraperApp(QMainWindow):
         self.options_back_button.clicked.connect(lambda: self._go_to_step(2))
         nav.addWidget(self.options_back_button)
         nav.addStretch(1)
-        self.export_button = QPushButton("🟠 Export")
+        self.export_button = QPushButton("Export")
         self.export_button.setProperty("primary", True)
         self.export_button.clicked.connect(self._on_export_clicked)
         nav.addWidget(self.export_button)
@@ -617,13 +646,17 @@ class ArchiScraperApp(QMainWindow):
         card = self._build_card()
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(12)
+        card_layout.setSpacing(16)
 
         self.done_stepper = StepperWidget()
         card_layout.addWidget(self.done_stepper)
 
         self.done_header_label = QLabel("Export complete")
         self.done_header_label.setProperty("header", True)
+        self.done_header_label.setStyleSheet(
+            "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 12px; "
+            "border-radius: 6px; border-left: 3px solid #34a853;"
+        )
         card_layout.addWidget(self.done_header_label)
 
         self.done_summary_label = QLabel("")
@@ -633,12 +666,13 @@ class ArchiScraperApp(QMainWindow):
         self.done_files_label = QLabel("")
         self.done_files_label.setWordWrap(True)
         self.done_files_label.setProperty("subtle", True)
+        self.done_files_label.setTextFormat(Qt.TextFormat.RichText)
         card_layout.addWidget(self.done_files_label)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(12)
         self.open_folder_button = QPushButton("Open Folder")
-        self.open_folder_button.setProperty("secondary", True)
+        self.open_folder_button.setProperty("primary", True)
         self.open_folder_button.clicked.connect(self._open_export_folder)
         buttons.addWidget(self.open_folder_button)
 
@@ -655,7 +689,7 @@ class ArchiScraperApp(QMainWindow):
         buttons.addStretch(1)
 
         self.new_export_button = QPushButton("New Export")
-        self.new_export_button.setProperty("primary", True)
+        self.new_export_button.setProperty("secondary", True)
         self.new_export_button.clicked.connect(self._reset_to_source_step)
         buttons.addWidget(self.new_export_button)
         card_layout.addLayout(buttons)
@@ -665,9 +699,9 @@ class ArchiScraperApp(QMainWindow):
 
     def _get_version_text(self) -> str:
         try:
-            return f"v{metadata.version('archi-scraper')}"
+            return metadata.version("archiscraper")
         except metadata.PackageNotFoundError:
-            return "v1.4.0"
+            return "1.4.0"
 
     def _open_settings_dialog(self):
         dialog = SettingsDialog(self.user_agent_input.text(), self._get_timeout(), self)
@@ -803,6 +837,16 @@ class ArchiScraperApp(QMainWindow):
         self.open_folder_button.setEnabled(bool(self.export_output_dir))
         self.validate_xml_button.setEnabled(bool(self.last_xml_path))
         self.retry_export_button.setVisible(not success)
+        if success:
+            self.done_header_label.setStyleSheet(
+                "background-color: #e6f4ea; color: #1e6b3a; padding: 8px 12px; "
+                "border-radius: 6px; border-left: 3px solid #34a853;"
+            )
+        else:
+            self.done_header_label.setStyleSheet(
+                "background-color: #fce8e6; color: #b3261e; padding: 8px 12px; "
+                "border-radius: 6px; border-left: 3px solid #d93025;"
+            )
         self._go_to_step(4)
 
     def _toggle_select_all_views(self):
@@ -1075,8 +1119,9 @@ class ArchiScraperApp(QMainWindow):
             f"Elements: {total_elements}\n"
             f"Relationships: {total_relationships}"
         )
-        files_text = "\n".join(
-            f"{Path(path).name} ({Path(path).stat().st_size} bytes)"
+        files_text = "<br>".join(
+            f"<span style='color:#444; font-weight:600;'>{Path(path).name}</span> "
+            f"<span style='color:#7a7a7a;'>({Path(path).stat().st_size} bytes)</span>"
             for path in self.exported_files
             if Path(path).exists()
         )

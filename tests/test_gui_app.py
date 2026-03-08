@@ -62,6 +62,7 @@ class TestWizardGui(unittest.TestCase):
             self.assertEqual(window.load_local_button.text(), "Open Local Files...")
             self.assertEqual(window.title_label.text(), "ArchiScraper")
             self.assertEqual(window.settings_button.text(), "Settings")
+            self.assertEqual(window.version_label.text(), "1.4.0")
             self.assertEqual(window.size().width(), 800)
             self.assertEqual(window.size().height(), 600)
             self.assertFalse(window.isMaximized())
@@ -115,8 +116,11 @@ class TestWizardGui(unittest.TestCase):
             first_item = window.view_list.item(0)
             first_widget = window.view_list.itemWidget(first_item)
             self.assertIsInstance(first_widget.checkbox, QCheckBox)
-            self.assertEqual(first_widget.checkbox.text(), "Application Overview")
+            self.assertEqual(first_widget.checkbox.text(), "")
+            self.assertEqual(first_widget.name_label.text(), "Application Overview")
             self.assertEqual(first_widget.count_label.text(), "1 elements")
+            self.assertEqual(first_widget.toolTip(), "Application Overview - 1 elements")
+            self.assertEqual(first_widget.name_label.toolTip(), "Application Overview - 1 elements")
 
             self.assertEqual(window.preview_stack.currentWidget(), window.review_preview)
             self.assertEqual(window.review_preview._url.toString(), "https://example.test/views/view-1.html")
@@ -146,6 +150,30 @@ class TestWizardGui(unittest.TestCase):
 
             window.view_list.setCurrentItem(None)
             self.assertEqual(window.preview_stack.currentWidget(), window.preview_placeholder)
+            window.close()
+
+    def test_version_lookup_and_done_step_styling(self) -> None:
+        with patch.object(module, "QWebEngineView", DummyWebEngineView):
+            with patch.object(module.metadata, "version", return_value="2.3.4"):
+                window = module.ArchiScraperApp()
+
+            self.assertEqual(window.version_label.text(), "2.3.4")
+            self.assertEqual(window.export_button.text(), "Export")
+            self.assertTrue(window.output_dir_button.text().startswith("Browse"))
+
+            window.export_output_dir = str(ROOT)
+            window.last_xml_path = str(ROOT / "dummy.xml")
+            window._enter_done_step(True, "ok", "file.xml")
+            self.assertEqual(window.done_header_label.text(), "Export complete")
+            self.assertIn("#e6f4ea", window.done_header_label.styleSheet())
+            self.assertTrue(window.open_folder_button.property("primary"))
+            self.assertTrue(window.validate_xml_button.property("secondary"))
+            self.assertTrue(window.new_export_button.property("secondary"))
+
+            window._enter_done_step(False, "bad", "retry")
+            self.assertEqual(window.done_header_label.text(), "Export failed")
+            self.assertIn("#fce8e6", window.done_header_label.styleSheet())
+            self.assertFalse(window.retry_export_button.isHidden())
             window.close()
 
 
