@@ -26,3 +26,4 @@ dist/
 dcra_master.xml
 FINAL_VERIFICATION.md
 REVIEW.md
+*.egg-info/
