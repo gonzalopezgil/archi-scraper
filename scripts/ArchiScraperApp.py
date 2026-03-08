@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 import requests
 from typing import Optional
 
-from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt
+from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt, QEvent
 from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor, QPalette
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -525,6 +525,7 @@ class ArchiScraperApp(QMainWindow):
 
         self.view_list = QListWidget()
         self.view_list.currentItemChanged.connect(self._on_view_current_item_changed)
+        self.view_list.viewport().installEventFilter(self)
         self.review_splitter.addWidget(self.view_list)
 
         self.preview_container = QFrame()
@@ -842,6 +843,7 @@ class ArchiScraperApp(QMainWindow):
             widget.clicked.connect(
                 lambda bound_item=item: self._on_view_row_clicked(bound_item)
             )
+            item.setSizeHint(widget.sizeHint())
             self.view_list.setItemWidget(item, widget)
         self.view_list.blockSignals(False)
         # Don't auto-select row 0 — show placeholder until user clicks
@@ -898,6 +900,15 @@ class ArchiScraperApp(QMainWindow):
             if should_select_all:
                 self.selected_view_ids.add(item.data(Qt.ItemDataRole.UserRole))
         self._update_selection_ui()
+
+    def eventFilter(self, obj, event):
+        if obj == self.view_list.viewport() and event.type() == QEvent.Type.MouseButtonRelease:
+            pos = event.pos()
+            item = self.view_list.itemAt(pos)
+            if item:
+                self.view_list.setCurrentItem(item)
+                self._update_preview_panel()
+        return super().eventFilter(obj, event)
 
     def _on_view_row_clicked(self, item):
         self.view_list.setCurrentItem(item)
