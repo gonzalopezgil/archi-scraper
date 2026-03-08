@@ -134,6 +134,8 @@ class StepperWidget(QWidget):
 class ReviewListItemWidget(QWidget):
     """Custom list row with a standard checkbox and secondary metadata."""
 
+    clicked = pyqtSignal()
+
     def __init__(self, name: str, count: int, parent=None):
         super().__init__(parent)
         tooltip = f"{name} - {count} elements"
@@ -164,6 +166,10 @@ class ReviewListItemWidget(QWidget):
         self.checkbox.setToolTip(tooltip)
         self.name_label.setToolTip(tooltip)
         self.count_label.setToolTip(tooltip)
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class SettingsDialog(QDialog):
@@ -215,8 +221,8 @@ class ArchiScraperApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ArchiScraper")
-        self.setMinimumSize(700, 500)
-        self.resize(800, 600)
+        self.setMinimumSize(800, 550)
+        self.resize(1000, 650)
 
         icon_path = resource_path("icon.png")
         if os.path.exists(icon_path):
@@ -833,6 +839,9 @@ class ArchiScraperApp(QMainWindow):
             widget.checkbox.toggled.connect(
                 lambda checked, view_id=view["view_id"]: self._on_view_checkbox_toggled(view_id, checked)
             )
+            widget.clicked.connect(
+                lambda bound_item=item: self._on_view_row_clicked(bound_item)
+            )
             self.view_list.setItemWidget(item, widget)
         self.view_list.blockSignals(False)
         # Don't auto-select row 0 — show placeholder until user clicks
@@ -890,6 +899,10 @@ class ArchiScraperApp(QMainWindow):
                 self.selected_view_ids.add(item.data(Qt.ItemDataRole.UserRole))
         self._update_selection_ui()
 
+    def _on_view_row_clicked(self, item):
+        self.view_list.setCurrentItem(item)
+        self._update_preview_panel()
+
     def _on_view_checkbox_toggled(self, view_id: str, checked: bool):
         if checked:
             self.selected_view_ids.add(view_id)
@@ -929,11 +942,15 @@ class ArchiScraperApp(QMainWindow):
             return
         view_id = item.data(Qt.ItemDataRole.UserRole)
         view_data = next((view for view in self.available_views if view["view_id"] == view_id), None)
-        preview_url = (view_data or {}).get("preview_url")
-        if not preview_url:
+        preview_html = (view_data or {}).get("preview_html")
+        preview_url = (view_data or {}).get("preview_url", "")
+        if not preview_html and not preview_url:
             self.preview_stack.setCurrentWidget(self.preview_placeholder)
             return
-        self.review_preview.setUrl(QUrl(preview_url))
+        if preview_html:
+            self.review_preview.setHtml(preview_html, QUrl(preview_url))
+        else:
+            self.review_preview.setUrl(QUrl(preview_url))
         self.preview_stack.setCurrentWidget(self.review_preview)
 
     def _set_review_splitter_sizes(self):
@@ -1043,6 +1060,7 @@ class ArchiScraperApp(QMainWindow):
                 parsed = ViewParser.parse(response.text)
                 if parsed:
                     parsed["preview_url"] = view_url
+                    parsed["preview_html"] = response.text
                     view_data = parsed
             except Exception:
                 pass
@@ -1075,6 +1093,7 @@ class ArchiScraperApp(QMainWindow):
                 view_data = ViewParser.parse(view_html)
                 if view_data:
                     view_data["preview_url"] = QUrl.fromLocalFile(view_file).toString()
+                    view_data["preview_html"] = view_html
                     view_data["local_path"] = view_file
                     self.available_views.append(view_data)
             except Exception:

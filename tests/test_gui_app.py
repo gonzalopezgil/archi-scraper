@@ -63,8 +63,8 @@ class TestWizardGui(unittest.TestCase):
             self.assertEqual(window.title_label.text(), "ArchiScraper")
             self.assertEqual(window.settings_button.text(), "Settings")
             self.assertEqual(window.version_label.text(), "1.4.0")
-            self.assertEqual(window.size().width(), 800)
-            self.assertEqual(window.size().height(), 600)
+            self.assertEqual(window.size().width(), 1000)
+            self.assertEqual(window.size().height(), 650)
             self.assertFalse(window.isMaximized())
 
             source_cards = [
