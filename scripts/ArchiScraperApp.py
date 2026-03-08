@@ -655,16 +655,15 @@ class ArchiScraperApp(QMainWindow):
         self.preview_placeholder.setMinimumHeight(200)
         self.preview_stack.addWidget(self.preview_placeholder)
 
-        # Image preview via QLabel + QPixmap (QWebEngineView can't render in inactive QStackedWidget)
+        # Image preview via QLabel + QScrollArea (QWebEngineView can't render in QStackedWidget)
+        from PyQt6.QtWidgets import QScrollArea
         self.review_image_label = QLabel()
-        self.review_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.review_image_label.setStyleSheet("background: #fafafa; border: none;")
-        self.review_image_label.setScaledContents(False)
-        scroll_area = __import__('PyQt6.QtWidgets', fromlist=['QScrollArea']).QScrollArea()
-        scroll_area.setWidget(self.review_image_label)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("QScrollArea { background: #fafafa; border: none; }")
-        self.review_image_scroll = scroll_area
+        self.review_image_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self.review_image_label.setStyleSheet("background: #fafafa;")
+        self.review_image_scroll = QScrollArea()
+        self.review_image_scroll.setWidget(self.review_image_label)
+        self.review_image_scroll.setWidgetResizable(True)
+        self.review_image_scroll.setStyleSheet("QScrollArea { background: #fafafa; border: none; }")
         self.preview_stack.addWidget(self.review_image_scroll)
 
         self.review_preview = QTextBrowser()
@@ -676,6 +675,17 @@ class ArchiScraperApp(QMainWindow):
         self.review_preview.setStyleSheet("QTextBrowser { background: #fafafa; border: none; }")
         self.preview_stack.addWidget(self.review_preview)
         preview_layout.addWidget(self.preview_stack)
+
+        # Open in Browser button
+        self.open_view_button = QPushButton("Open in Browser")
+        self.open_view_button.setStyleSheet(
+            "background: transparent; color: #e8601c; border: 1px solid #e8601c; "
+            "border-radius: 6px; padding: 4px 12px; font-size: 12px;"
+        )
+        self.open_view_button.setVisible(False)
+        self.open_view_button.clicked.connect(self._open_current_view_in_browser)
+        preview_layout.addWidget(self.open_view_button, alignment=Qt.AlignmentFlag.AlignRight)
+
         self.review_splitter.addWidget(self.preview_container)
         self.review_splitter.setStretchFactor(0, 1)
         self.review_splitter.setStretchFactor(1, 1)
@@ -1074,6 +1084,38 @@ class ArchiScraperApp(QMainWindow):
                 self.selected_view_ids.add(item.data(Qt.ItemDataRole.UserRole))
         self._update_selection_ui()
 
+    def _on_image_fetched(self, data_url, view_data):
+        """Callback when JS fetch returns image as data URL (or empty on failure)."""
+        if data_url and data_url.startswith('data:'):
+            import base64
+            from PyQt6.QtGui import QPixmap
+            # Extract base64 from data URL: "data:image/png;base64,..."
+            b64 = data_url.split(',', 1)[1] if ',' in data_url else ''
+            if b64:
+                pixmap = QPixmap()
+                pixmap.loadFromData(base64.b64decode(b64))
+                if not pixmap.isNull():
+                    width = max(self.preview_stack.width() - 20, 400)
+                    if pixmap.width() > width:
+                        pixmap = pixmap.scaledToWidth(width, Qt.TransformationMode.SmoothTransformation)
+                    self.review_image_label.setPixmap(pixmap)
+                    self.preview_stack.setCurrentWidget(self.review_image_scroll)
+                    return
+        # Fallback to metadata summary
+        self.review_preview.setHtml(self._generate_view_summary(view_data))
+        self.preview_stack.setCurrentWidget(self.review_preview)
+
+    def _open_current_view_in_browser(self):
+        """Open the currently selected view's HTML page in the default browser."""
+        item = self.view_list.currentItem()
+        if not item:
+            return
+        view_id = item.data(Qt.ItemDataRole.UserRole)
+        if self.current_source_url and view_id:
+            base = self.current_source_url.rsplit('/', 1)[0]
+            view_url = f"{base}/views/{view_id}.html"
+            QDesktopServices.openUrl(QUrl(view_url))
+
     def eventFilter(self, obj, event):
         if not hasattr(self, 'view_list'):
             return super().eventFilter(obj, event)
@@ -1131,31 +1173,34 @@ class ArchiScraperApp(QMainWindow):
         if not view_data:
             self.preview_stack.setCurrentWidget(self.preview_placeholder)
             return
-        # Try to show the diagram image
+        # Try to show the diagram image via QWebEngineView (shares browser profile)
         view_id = view_data.get("view_id", "")
+        # Show/hide "Open in Browser" button
+        self.open_view_button.setVisible(bool(self.current_source_url and view_id))
+
+        # Try to fetch diagram image via JavaScript in the hidden_web_view (has NATO session)
         if self.current_source_url and view_id and hasattr(self, 'model_guid') and self.model_guid:
             result = self._get_image_base_and_guid()
             if result:
                 base_url, guid = result
                 image_url = f"{base_url}{guid}/images/{view_id}.png"
-                try:
-                    headers = {"User-Agent": self._get_user_agent()}
-                    resp = self.session.get(image_url, headers=headers, timeout=10)
-                    if resp.status_code == 200 and b'PNG' in resp.content[:8]:
-                        from PyQt6.QtGui import QPixmap
-                        pixmap = QPixmap()
-                        pixmap.loadFromData(resp.content)
-                        if not pixmap.isNull():
-                            # Scale to fit preview width while keeping aspect ratio
-                            scaled = pixmap.scaledToWidth(
-                                max(self.preview_stack.width() - 20, 400),
-                                Qt.TransformationMode.SmoothTransformation
-                            )
-                            self.review_image_label.setPixmap(scaled)
-                            self.preview_stack.setCurrentWidget(self.review_image_scroll)
-                            return
-                except Exception:
-                    pass
+                # Use JS fetch in hidden_web_view to download image as base64
+                js = f"""
+                (function() {{
+                    return fetch('{image_url}')
+                        .then(r => r.ok ? r.blob() : Promise.reject('not found'))
+                        .then(blob => new Promise((resolve, reject) => {{
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(blob);
+                        }}))
+                        .catch(() => '');
+                }})()
+                """
+                self.hidden_web_view.page().runJavaScript(js, 0, lambda data: self._on_image_fetched(data, view_data))
+                return  # Wait for async callback
+
         # Fallback to generated metadata summary
         self.review_preview.setHtml(self._generate_view_summary(view_data))
         self.preview_stack.setCurrentWidget(self.review_preview)
