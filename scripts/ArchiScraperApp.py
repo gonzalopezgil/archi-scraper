@@ -25,7 +25,7 @@ import requests
 from typing import Optional
 
 from PyQt6.QtCore import QUrl, pyqtSlot, pyqtSignal, Qt
-from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor
+from PyQt6.QtGui import QDesktopServices, QIcon, QIntValidator, QColor, QPalette
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QStatusBar,
@@ -250,6 +250,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _setup_ui(self):
         central_widget = QWidget()
+        central_widget.setObjectName("centralWidget")
         self.setCentralWidget(central_widget)
 
         self.setStyleSheet("""
@@ -258,8 +259,10 @@ class ArchiScraperApp(QMainWindow):
                 color: #222;
                 font-size: 13px;
             }
+            QWidget#centralWidget {
+                background: #f5f5f5;
+            }
             QWidget {
-                background: transparent;
                 color: #222;
                 font-size: 13px;
             }
@@ -377,8 +380,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_source_page(self):
         page = QWidget()
-        page.setAutoFillBackground(True)
-        page.setStyleSheet("background: #f5f5f5;")
+
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(24)
@@ -424,7 +426,10 @@ class ArchiScraperApp(QMainWindow):
         url_row.addWidget(self.url_input, 1)
 
         self.go_button = QPushButton("Load")
-        self.go_button.setProperty("primary", True)
+        self.go_button.setStyleSheet(
+            "background: #e8601c; color: white; font-weight: 600;"
+            " min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;"
+        )
         self.go_button.clicked.connect(self._on_go_clicked)
         url_row.addWidget(self.go_button)
         content_layout.addLayout(url_row)
@@ -467,8 +472,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_review_page(self):
         page = QWidget()
-        page.setAutoFillBackground(True)
-        page.setStyleSheet("background: #f5f5f5;")
+
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -550,7 +554,7 @@ class ArchiScraperApp(QMainWindow):
         nav.addWidget(self.review_back_button)
         nav.addStretch(1)
         self.review_next_button = QPushButton("Next →")
-        self.review_next_button.setProperty("primary", True)
+        self.review_next_button.setStyleSheet("background: #e8601c; color: white; font-weight: 600; min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;")
         self.review_next_button.setEnabled(False)
         self.review_next_button.clicked.connect(self._go_to_options_step)
         nav.addWidget(self.review_next_button)
@@ -561,8 +565,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_options_page(self):
         page = QWidget()
-        page.setAutoFillBackground(True)
-        page.setStyleSheet("background: #f5f5f5;")
+
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -653,7 +656,7 @@ class ArchiScraperApp(QMainWindow):
         nav.addWidget(self.options_back_button)
         nav.addStretch(1)
         self.export_button = QPushButton("Export")
-        self.export_button.setProperty("primary", True)
+        self.export_button.setStyleSheet("background: #e8601c; color: white; font-weight: 600; min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;")
         self.export_button.clicked.connect(self._on_export_clicked)
         nav.addWidget(self.export_button)
         card_layout.addLayout(nav)
@@ -663,8 +666,7 @@ class ArchiScraperApp(QMainWindow):
 
     def _build_done_page(self):
         page = QWidget()
-        page.setAutoFillBackground(True)
-        page.setStyleSheet("background: #f5f5f5;")
+
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -697,7 +699,7 @@ class ArchiScraperApp(QMainWindow):
         buttons = QHBoxLayout()
         buttons.setSpacing(12)
         self.open_folder_button = QPushButton("Open Folder")
-        self.open_folder_button.setProperty("primary", True)
+        self.open_folder_button.setStyleSheet("background: #e8601c; color: white; font-weight: 600; min-height: 36px; padding: 0 16px; border-radius: 8px; border: none;")
         self.open_folder_button.clicked.connect(self._open_export_folder)
         buttons.addWidget(self.open_folder_button)
 

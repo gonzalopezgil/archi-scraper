@@ -171,7 +171,7 @@ class TestWizardGui(unittest.TestCase):
             window._enter_done_step(True, "ok", "file.xml")
             self.assertEqual(window.done_header_label.text(), "Export complete")
             self.assertIn("#e6f4ea", window.done_header_label.styleSheet())
-            self.assertTrue(window.open_folder_button.property("primary"))
+            self.assertIn("#e8601c", window.open_folder_button.styleSheet())
             self.assertTrue(window.validate_xml_button.property("secondary"))
             self.assertTrue(window.new_export_button.property("secondary"))
 
