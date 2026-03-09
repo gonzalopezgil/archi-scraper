@@ -13,8 +13,8 @@ import sys
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Tuple
 
-ARCHIMATE_NS = "http://www.opengroup.org/xsd/archimate/3.0/"
-XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+from archiscraper_core import ARCHIMATE_NS, XSI_NS
+
 logger = logging.getLogger(__name__)
 
 LAYER_FILES = {

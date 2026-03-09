@@ -70,6 +70,11 @@ ET.register_namespace('xsi', XSI_NS)
 # Utility Functions
 # ============================================================================
 
+def _local_name(tag: str) -> str:
+    """Extract the local name from a possibly namespace-qualified tag."""
+    return tag.split('}', 1)[-1] if '}' in tag else tag
+
+
 def gen_id(prefix: str = "id") -> str:
     """Generate a short unique identifier with a prefix."""
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
@@ -410,7 +415,7 @@ class ModelDataParser:
                 len(self.folders),
             )
             return True
-        except Exception as exc:
+        except (requests.RequestException, ValueError, OSError) as exc:
             logger.error("Error loading model.html: %s", exc)
             self.loaded = False
             return False
@@ -429,7 +434,7 @@ class ModelDataParser:
                 len(self.folders),
             )
             return True
-        except Exception as exc:
+        except (OSError, ValueError, UnicodeDecodeError) as exc:
             logger.error("Error loading model.html: %s", exc)
             self.loaded = False
             return False
@@ -1106,12 +1111,9 @@ class ArchiMateXMLGenerator:
         """Validate referential integrity for elements, relationships, and views."""
         warnings: List[str] = []
 
-        def local_name(tag: str) -> str:
-            return tag.split('}', 1)[-1] if '}' in tag else tag
-
         element_ids: List[str] = []
         for elem in root.iter():
-            if local_name(elem.tag) == "element":
+            if _local_name(elem.tag) == "element":
                 elem_id = elem.get("identifier")
                 if elem_id:
                     element_ids.append(elem_id)
@@ -1125,7 +1127,7 @@ class ArchiMateXMLGenerator:
 
         relationship_ids: List[str] = []
         for rel in root.iter():
-            if local_name(rel.tag) == "relationship":
+            if _local_name(rel.tag) == "relationship":
                 rel_id = rel.get("identifier")
                 if rel_id:
                     relationship_ids.append(rel_id)
@@ -1140,13 +1142,13 @@ class ArchiMateXMLGenerator:
         relationship_id_set = set(relationship_ids)
 
         for node in root.iter():
-            if local_name(node.tag) == "node":
+            if _local_name(node.tag) == "node":
                 elem_ref = node.get("elementRef")
                 if elem_ref and elem_ref not in element_id_set:
                     warnings.append(f"Node elementRef missing element: {elem_ref}")
 
         for conn in root.iter():
-            if local_name(conn.tag) == "connection":
+            if _local_name(conn.tag) == "connection":
                 rel_ref = conn.get("relationshipRef")
                 if rel_ref and rel_ref not in relationship_id_set:
                     warnings.append(f"Connection relationshipRef missing relationship: {rel_ref}")
@@ -1156,27 +1158,24 @@ class ArchiMateXMLGenerator:
     @staticmethod
     def export_json(root: ET.Element) -> Dict[str, object]:
         """Export the ArchiMate XML tree into a JSON-ready dict."""
-        def local_name(tag: str) -> str:
-            return tag.split('}', 1)[-1] if '}' in tag else tag
-
         def get_xsi_type(elem: ET.Element) -> str:
             return elem.get("xsi:type") or elem.get(f"{{{XSI_NS}}}type") or ""
 
         def find_child_text(elem: ET.Element, child_name: str) -> str:
             for child in elem:
-                if local_name(child.tag) == child_name:
+                if _local_name(child.tag) == child_name:
                     return child.text or ""
             return ""
 
         model_name = ""
         for child in root:
-            if local_name(child.tag) == "name":
+            if _local_name(child.tag) == "name":
                 model_name = child.text or ""
                 break
 
         elements: List[Dict[str, str]] = []
         for elem in root.iter():
-            if local_name(elem.tag) == "element":
+            if _local_name(elem.tag) == "element":
                 elements.append({
                     "id": elem.get("identifier") or "",
                     "type": get_xsi_type(elem),
@@ -1186,7 +1185,7 @@ class ArchiMateXMLGenerator:
 
         relationships: List[Dict[str, str]] = []
         for rel in root.iter():
-            if local_name(rel.tag) == "relationship":
+            if _local_name(rel.tag) == "relationship":
                 relationships.append({
                     "id": rel.get("identifier") or "",
                     "type": get_xsi_type(rel),
@@ -1196,12 +1195,12 @@ class ArchiMateXMLGenerator:
 
         views: List[Dict[str, object]] = []
         for view in root.iter():
-            if local_name(view.tag) != "view":
+            if _local_name(view.tag) != "view":
                 continue
             view_nodes: List[Dict[str, str]] = []
             view_connections: List[Dict[str, str]] = []
             for child in view:
-                child_name = local_name(child.tag)
+                child_name = _local_name(child.tag)
                 if child_name == "node":
                     view_nodes.append({
                         "id": child.get("identifier") or "",

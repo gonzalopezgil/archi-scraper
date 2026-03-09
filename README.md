@@ -157,19 +157,29 @@ The GUI provides all CLI features plus:
 ## Architecture
 
 ```text
-ArchiScraperApp.py (GUI)
-        |\
-        | \
-        |  v
-        |  archiscraper_core.py
-        |  (ModelDataParser, ViewParser, ArchiMateXMLGenerator)
-        |  - fetch_with_retry (exponential backoff)
-        |  - validate_xml (reference integrity)
-        |  - export_json (XML → dict)
-        |
-        v
-html_to_archimate_xml.py (CLI) ----> archiscraper_to_markdown.py (Docs)
+┌──────────────────────┐     ┌──────────────────────┐
+│  ArchiScraperApp.py  │     │  html_to_archimate   │
+│  (GUI — PyQt6)       │     │  _xml.py (CLI)       │
+└──────────┬───────────┘     └──────────┬───────────┘
+           │                            │
+           └────────────┬───────────────┘
+                        v
+           ┌────────────────────────┐
+           │  archiscraper_core.py  │
+           │  ModelDataParser       │
+           │  ViewParser            │
+           │  ArchiMateXMLGenerator │
+           │  fetch_with_retry      │
+           │  validate_xml          │
+           └────────────┬───────────┘
+                        v
+           ┌────────────────────────┐
+           │  archiscraper_to_      │
+           │  markdown.py           │
+           └────────────────────────┘
 ```
+
+Both GUI and CLI share the same core — identical parsing, generation, and validation logic.
 
 ---
 
@@ -207,9 +217,9 @@ Tests cover: core parser, XML generation, relationship extraction, type mapping,
 - [x] Retry with exponential backoff
 - [x] XML validation
 - [x] 57 unit tests
-- [ ] GitHub Actions CI
+- [x] GitHub Actions CI (3 OS × 3 Python versions)
 - [ ] PyPI package
-- [ ] Progress callbacks for CLI (verbose mode)
+- [ ] CLI verbose mode (`--verbose` for progress output)
 
 ---
 
