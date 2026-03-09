@@ -12,9 +12,15 @@
 
 ArchiScraper extracts architecture data from published Archi HTML reports and converts them back into standard ArchiMate Open Exchange Format (`.xml`), JSON, or Markdown. Recover lost models, extract data from shared reports, or migrate content between tools.
 
-![ArchiScraper Screenshot](icon.png)
+## GUI Preview
 
-![Demo of my app](https://github.com/user-attachments/assets/0f0a302b-96b3-4da6-87bd-60af018bb9ac)
+| Step 1: Source | Step 2: Review |
+|:---:|:---:|
+| ![Step 1 — Enter URL](screenshots/step1-source.png) | ![Step 2 — Review diagram](screenshots/step2-review.png) |
+
+| Step 3: Export Options | Step 4: Done |
+|:---:|:---:|
+| ![Step 3 — Configure export](screenshots/step3-options.png) | ![Step 4 — Export complete](screenshots/step4-done.png) |
 
 ---
 
