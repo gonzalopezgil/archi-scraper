@@ -558,6 +558,11 @@ class ArchiScraperApp(QMainWindow):
         self.go_button = QPushButton("Load")
         self.go_button.setProperty("primary", True)
         self.go_button.setFixedHeight(32)
+        self.go_button.setMinimumWidth(80)
+        self.go_button.setStyleSheet(
+            "background: #e8601c; color: white; font-weight: 600; "
+            "border: none; border-radius: 8px; padding: 0 16px; font-size: 14px;"
+        )
         self.go_button.clicked.connect(self._on_go_clicked)
         url_row.addWidget(self.go_button)
         content_layout.addLayout(url_row)
@@ -1133,7 +1138,7 @@ class ArchiScraperApp(QMainWindow):
         view_id = item.data(Qt.ItemDataRole.UserRole)
         if self.current_source_url and view_id:
             base = self.current_source_url.rsplit('/', 1)[0]
-            view_url = f"{base}/views/{view_id}.html"
+            view_url = f"{base}/index.html?view={view_id}"
             QDesktopServices.openUrl(QUrl(view_url))
 
     def eventFilter(self, obj, event):
