@@ -1,6 +1,10 @@
-# Archi Scraper
+<p align="center">
+  <img src="icon.png" alt="ArchiScraper" width="128">
+</p>
 
-### An ArchiMate Web Report to XML Converter
+<h1 align="center">Archi Scraper</h1>
+
+<h3 align="center">An ArchiMate Web Report to XML Converter</h3>
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/gonzalopezgil/archi-scraper)](https://github.com/gonzalopezgil/archi-scraper/releases)
 [![GitHub downloads](https://img.shields.io/github/downloads/gonzalopezgil/archi-scraper/total)](https://github.com/gonzalopezgil/archi-scraper/releases)
