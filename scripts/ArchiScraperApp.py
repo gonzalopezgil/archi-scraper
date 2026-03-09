@@ -943,7 +943,7 @@ class ArchiScraperApp(QMainWindow):
         try:
             return metadata.version("archiscraper")
         except metadata.PackageNotFoundError:
-            return "1.5.0"
+            return "1.5.2"
 
     def _open_settings_dialog(self):
         dialog = SettingsDialog(self.user_agent_input.text(), self._get_timeout(), self)
