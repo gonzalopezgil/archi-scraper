@@ -14,13 +14,17 @@ ArchiScraper extracts architecture data from published Archi HTML reports and co
 
 ## GUI Preview
 
-| Step 1: Source | Step 2: Review |
-|:---:|:---:|
-| ![Step 1 — Enter URL](screenshots/step1-source.png) | ![Step 2 — Review diagram](screenshots/step2-review.png) |
+### Step 1 — Source
+![Step 1 — Enter the Archi HTML report URL](screenshots/step1-source.png)
 
-| Step 3: Export Options | Step 4: Done |
-|:---:|:---:|
-| ![Step 3 — Configure export](screenshots/step3-options.png) | ![Step 4 — Export complete](screenshots/step4-done.png) |
+### Step 2 — Review
+![Step 2 — Browse and select views from the model](screenshots/step2-review.png)
+
+### Step 3 — Export Options
+![Step 3 — Configure output format and options](screenshots/step3-options.png)
+
+### Step 4 — Done
+![Step 4 — Export complete](screenshots/step4-done.png)
 
 ---
 
